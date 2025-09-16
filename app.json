@@ -13,7 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app uses location to track your exploration and clear fog from visited areas.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your exploration and clear fog from visited areas."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,10 +25,35 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsImpl": "mapbox",
+          "RNMapboxMapsDownloadToken": "YOUR_MAPBOX_DOWNLOAD_TOKEN"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Cartographer to use your location to track exploration and clear fog from visited areas.",
+          "locationAlwaysPermission": "Allow Cartographer to use your location to track exploration and clear fog from visited areas.",
+          "locationWhenInUsePermission": "Allow Cartographer to use your location to track exploration and clear fog from visited areas."
+        }
+      ]
+    ],
+    "taskManager": {
+      "backgroundLocationTask": "background-location-task"
     }
   }
 }
