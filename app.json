@@ -7,6 +7,18 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "owner": "your-expo-username",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/[project-id]"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "[project-id]"
+      }
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -14,9 +26,16 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.deabound.cartographerapp",
+      "buildNumber": "1",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app uses location to track your exploration and clear fog from visited areas.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your exploration and clear fog from visited areas."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to track your exploration and clear fog from visited areas.",
+        "NSLocationAlwaysUsageDescription": "This app uses location to track your exploration and clear fog from visited areas.",
+        "UIBackgroundModes": ["location"]
+      },
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
@@ -26,10 +45,20 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "package": "com.deabound.cartographerapp",
+      "versionCode": 1,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "ACCESS_BACKGROUND_LOCATION",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_EXTERNAL_STORAGE"
+      ],
+      "blockedPermissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
       ]
     },
     "web": {
@@ -40,7 +69,7 @@
         "@rnmapbox/maps",
         {
           "RNMapboxMapsImpl": "mapbox",
-          "RNMapboxMapsDownloadToken": "YOUR_MAPBOX_DOWNLOAD_TOKEN"
+          "RNMapboxMapsDownloadToken": "$MAPBOX_DOWNLOAD_TOKEN"
         }
       ],
       [
@@ -49,6 +78,12 @@
           "locationAlwaysAndWhenInUsePermission": "Allow Cartographer to use your location to track exploration and clear fog from visited areas.",
           "locationAlwaysPermission": "Allow Cartographer to use your location to track exploration and clear fog from visited areas.",
           "locationWhenInUsePermission": "Allow Cartographer to use your location to track exploration and clear fog from visited areas."
+        }
+      ],
+      [
+        "expo-updates",
+        {
+          "username": "your-expo-username"
         }
       ]
     ],

@@ -3,6 +3,7 @@ import { getDatabaseService, ExploredArea } from '../database/services';
 import { locationService } from './locationService';
 import { processBackgroundLocations } from './taskManager';
 import { calculateDistance, createLocationKey, calculateCircleOverlap, Circle } from '../utils/spatial';
+import { getOfflineService } from './offlineService';
 
 export interface ExplorationConfig {
   minExplorationRadius: number; // meters
@@ -22,6 +23,7 @@ export interface ExplorationResult {
 export class ExplorationService {
   private static instance: ExplorationService;
   private databaseService = getDatabaseService();
+  private offlineService = getOfflineService();
   private config: ExplorationConfig;
   private pendingLocations: Map<string, { location: LocationUpdate; timestamp: number }> = new Map();
   private isProcessing: boolean = false;
@@ -254,14 +256,52 @@ export class ExplorationService {
         accuracy: location.accuracy
       };
 
-      const id = await this.databaseService.createExploredArea(exploredArea);
-      
-      return {
-        id,
-        ...exploredArea
-      };
+      // Check if we're online
+      if (this.offlineService.isOnline()) {
+        // Create directly in database
+        const id = await this.databaseService.createExploredArea(exploredArea);
+        
+        return {
+          id,
+          ...exploredArea
+        };
+      } else {
+        // Add to offline queue for later processing
+        await this.offlineService.addToOfflineQueue({
+          type: 'exploration',
+          data: exploredArea
+        });
+        
+        // Return area with temporary ID for immediate UI feedback
+        return {
+          id: Date.now(), // Temporary ID
+          ...exploredArea
+        };
+      }
     } catch (error) {
       console.error('Error creating explored area:', error);
+      
+      // If database operation fails, try adding to offline queue
+      if (this.offlineService.isOffline()) {
+        const exploredArea: Omit<ExploredArea, 'id' | 'created_at'> = {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          radius: radius,
+          explored_at: new Date(location.timestamp).toISOString(),
+          accuracy: location.accuracy
+        };
+        
+        await this.offlineService.addToOfflineQueue({
+          type: 'exploration',
+          data: exploredArea
+        });
+        
+        return {
+          id: Date.now(), // Temporary ID
+          ...exploredArea
+        };
+      }
+      
       throw new Error(`Failed to create explored area: ${error}`);
     }
   }
@@ -437,7 +477,8 @@ export class ExplorationService {
    */
   public async processBackgroundLocations(): Promise<void> {
     try {
-      const backgroundLocations = await processBackgroundLocations();
+      const backgroundResult = await processBackgroundLocations();
+      const backgroundLocations = backgroundResult.processed;
       
       if (backgroundLocations.length > 0) {
         console.log(`Processing ${backgroundLocations.length} background locations`);
@@ -470,12 +511,12 @@ export class ExplorationService {
   /**
    * Get current exploration status
    */
-  public getExplorationStatus(): {
+  public async getExplorationStatus(): Promise<{
     isActive: boolean;
     pendingLocations: number;
     hasPermissions: boolean;
-  } {
-    const locationStatus = locationService.getTrackingStatus();
+  }> {
+    const locationStatus = await locationService.getTrackingStatus();
     
     return {
       isActive: locationStatus.isTracking,

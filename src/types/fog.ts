@@ -1,11 +1,22 @@
-import { ExploredArea } from '../database/services';
+// Generic explored area interface that can work with both database and Redux store types
+export interface GenericExploredArea {
+  id?: string | number;
+  latitude?: number;
+  longitude?: number;
+  center?: [number, number];
+  radius: number;
+  explored_at?: string;
+  exploredAt?: number;
+  accuracy?: number;
+}
 
 export interface FogOverlayProps {
-  exploredAreas: ExploredArea[];
+  exploredAreas: GenericExploredArea[];
   animationSpeed?: number;
   cloudDensity?: number;
   onFogCleared?: (area: GeographicArea) => void;
   visible?: boolean;
+  zoomLevel?: number;
 }
 
 export interface FogGeometry {

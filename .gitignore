@@ -31,7 +31,13 @@ yarn-error.*
 *.pem
 
 # local env files
+.env.local
 .env*.local
+
+# Environment files with sensitive data (keep templates, ignore local overrides)
+.env.development.local
+.env.preview.local
+.env.production.local
 
 # typescript
 *.tsbuildinfo

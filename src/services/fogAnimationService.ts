@@ -143,10 +143,13 @@ export class FogAnimationService {
       const delay = index * 50;
 
       // Animate particle movement (upward drift)
+      const currentX = (particle.position.x as any)._value || 0;
+      const currentY = (particle.position.y as any)._value || 0;
+      
       Animated.timing(particle.position, {
         toValue: {
-          x: particle.position.x._value + (Math.random() - 0.5) * 0.001, // Small horizontal drift
-          y: particle.position.y._value + 0.002, // Upward movement
+          x: currentX + (Math.random() - 0.5) * 0.001, // Small horizontal drift
+          y: currentY + 0.002, // Upward movement
         },
         duration: this.config.particleLifetime,
         delay,
@@ -163,8 +166,9 @@ export class FogAnimationService {
       }).start();
 
       // Animate particle scale (grow slightly)
+      const currentScale = (particle.scale as any)._value || 1;
       Animated.timing(particle.scale, {
-        toValue: particle.scale._value * 1.5,
+        toValue: currentScale * 1.5,
         duration: this.config.particleLifetime,
         delay,
         easing: Easing.out(Easing.quad),
@@ -172,8 +176,9 @@ export class FogAnimationService {
       }).start();
 
       // Animate particle rotation
+      const currentRotation = (particle.rotation as any)._value || 0;
       Animated.timing(particle.rotation, {
-        toValue: particle.rotation._value + 180 + Math.random() * 180,
+        toValue: currentRotation + 180 + Math.random() * 180,
         duration: this.config.particleLifetime,
         delay,
         easing: Easing.linear,

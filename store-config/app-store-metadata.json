@@ -1,0 +1,24 @@
+{
+  "ios": {
+    "name": "Cartographer - Explore & Discover",
+    "subtitle": "Fog of War Exploration",
+    "description": "Transform your real-world adventures into an epic exploration game! Cartographer uses a mysterious fog-of-war overlay that covers the entire world map, revealing areas only as you physically visit them.\n\n🗺️ FEATURES:\n• Interactive world map with stunning Mapbox visuals\n• Animated fog and cloud effects that clear as you explore\n• Real-time GPS tracking to reveal visited locations\n• Beautiful animations and smooth 60fps performance\n• Track your exploration progress and achievements\n• Works offline with cached map data\n• Privacy-focused: all data stored locally on your device\n\n🎮 HOW IT WORKS:\nSimply open the app and start exploring! As you walk, drive, or travel to new places, watch the mysterious fog lift to reveal the world beneath. Each location you visit becomes permanently visible, creating a personalized map of your real-world adventures.\n\n🏆 GAMIFICATION:\n• View exploration statistics and progress\n• Unlock achievements for visiting new areas\n• Track countries, cities, and regions you've discovered\n• See your exploration percentage grow over time\n\n🔒 PRIVACY:\nYour location data never leaves your device. All exploration progress is stored locally using SQLite, ensuring your privacy while you explore the world.\n\nStart your exploration journey today and see how much of the world you can uncover!",
+    "keywords": "exploration,travel,map,gps,adventure,fog of war,discovery,location,tracking,offline",
+    "category": "TRAVEL",
+    "contentRating": "4+",
+    "supportUrl": "https://github.com/your-username/cartographer/issues",
+    "marketingUrl": "https://your-website.com/cartographer",
+    "privacyPolicyUrl": "https://your-website.com/privacy"
+  },
+  "android": {
+    "title": "Cartographer - Explore & Discover",
+    "shortDescription": "Fog of war exploration game that reveals the world as you visit it",
+    "fullDescription": "Transform your real-world adventures into an epic exploration game! Cartographer uses a mysterious fog-of-war overlay that covers the entire world map, revealing areas only as you physically visit them.\n\n🗺️ FEATURES:\n• Interactive world map with stunning Mapbox visuals\n• Animated fog and cloud effects that clear as you explore\n• Real-time GPS tracking to reveal visited locations\n• Beautiful animations and smooth 60fps performance\n• Track your exploration progress and achievements\n• Works offline with cached map data\n• Privacy-focused: all data stored locally on your device\n\n🎮 HOW IT WORKS:\nSimply open the app and start exploring! As you walk, drive, or travel to new places, watch the mysterious fog lift to reveal the world beneath. Each location you visit becomes permanently visible, creating a personalized map of your real-world adventures.\n\n🏆 GAMIFICATION:\n• View exploration statistics and progress\n• Unlock achievements for visiting new areas\n• Track countries, cities, and regions you've discovered\n• See your exploration percentage grow over time\n\n🔒 PRIVACY:\nYour location data never leaves your device. All exploration progress is stored locally using SQLite, ensuring your privacy while you explore the world.\n\nStart your exploration journey today and see how much of the world you can uncover!",
+    "category": "TRAVEL_AND_LOCAL",
+    "contentRating": "Everyone",
+    "contactEmail": "support@your-domain.com",
+    "contactPhone": "+1-555-0123",
+    "contactWebsite": "https://your-website.com",
+    "privacyPolicyUrl": "https://your-website.com/privacy"
+  }
+}

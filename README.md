@@ -17,14 +17,13 @@ A React Native mobile application built with Expo that gamifies real-world explo
 npm install
 ```
 
-2. Configure Mapbox:
-   - Create a Mapbox account at https://mapbox.com
-   - Get your public and secret API keys
-   - Replace `YOUR_MAPBOX_DOWNLOAD_TOKEN` in `app.json` with your Mapbox download token
-   - Create a `.env` file and add your Mapbox public key:
+2. Configure Mapbox API keys:
+   ```bash
+   cp .env.example .env
    ```
-   EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=your_public_mapbox_token_here
-   ```
+   - Get your tokens from [Mapbox Access Tokens](https://account.mapbox.com/access-tokens/)
+   - Update `.env` with your actual tokens
+   - See [MAPBOX_SETUP.md](./MAPBOX_SETUP.md) for detailed setup instructions
 
 3. Run the development server:
 ```bash

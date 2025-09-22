@@ -37,10 +37,17 @@ export interface SpatialQuery {
 }
 
 export class DatabaseService {
-  private db: SQLite.SQLiteDatabase;
+  private _db: SQLite.SQLiteDatabase | null = null;
 
   constructor() {
-    this.db = getDatabaseManager().getDatabase();
+    // Don't initialize database in constructor to avoid circular dependency
+  }
+
+  private get db(): SQLite.SQLiteDatabase {
+    if (!this._db) {
+      this._db = getDatabaseManager().getDatabase();
+    }
+    return this._db;
   }
 
   // Explored Areas CRUD Operations
@@ -109,24 +116,30 @@ export class DatabaseService {
       const latDelta = query.radius / 111.32; // Approximate degrees per km for latitude
       const lngDelta = query.radius / (111.32 * Math.cos(query.latitude * Math.PI / 180));
 
+      // Use bounding box approach since SQLite doesn't have trigonometric functions
       const result = await this.db.getAllAsync<ExploredArea>(
-        `SELECT *, 
-         (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * 
-         cos(radians(longitude) - radians(?)) + sin(radians(?)) * 
-         sin(radians(latitude)))) AS distance
-         FROM explored_areas 
+        `SELECT * FROM explored_areas 
          WHERE latitude BETWEEN ? AND ? 
-         AND longitude BETWEEN ? AND ?
-         HAVING distance <= ?
-         ORDER BY distance`,
+         AND longitude BETWEEN ? AND ?`,
         [
-          query.latitude, query.longitude, query.latitude,
           query.latitude - latDelta, query.latitude + latDelta,
-          query.longitude - lngDelta, query.longitude + lngDelta,
-          query.radius
+          query.longitude - lngDelta, query.longitude + lngDelta
         ]
       );
-      return result;
+
+      // Filter by actual distance and add distance property in JavaScript
+      const filteredResults = result
+        .map(area => {
+          const distance = this.calculateDistance(
+            query.latitude, query.longitude,
+            area.latitude, area.longitude
+          );
+          return { ...area, distance };
+        })
+        .filter(area => area.distance <= query.radius)
+        .sort((a, b) => a.distance - b.distance);
+      
+      return filteredResults;
     } catch (error) {
       console.error('Failed to find nearby explored areas:', error);
       throw new Error(`Failed to find nearby explored areas: ${error}`);
@@ -253,18 +266,370 @@ export class DatabaseService {
     }
   }
 
+  async performQuickCheck(): Promise<boolean> {
+    try {
+      const result = await this.db.getFirstAsync<{ quick_check: string }>(
+        'PRAGMA quick_check'
+      );
+      return result?.quick_check === 'ok';
+    } catch (error) {
+      console.error('Quick check failed:', error);
+      return false;
+    }
+  }
+
+  async checkDatabaseCorruption(): Promise<{ isCorrupted: boolean; corruptionType: string | null }> {
+    try {
+      // Check if database file is accessible
+      const quickCheck = await this.performQuickCheck();
+      if (!quickCheck) {
+        return { isCorrupted: true, corruptionType: 'structural' };
+      }
+
+      // Check table existence
+      const tables = await this.db.getAllAsync<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+      );
+      
+      const expectedTables = ['explored_areas', 'user_stats', 'achievements'];
+      const existingTables = tables.map(t => t.name);
+      const missingTables = expectedTables.filter(table => !existingTables.includes(table));
+      
+      if (missingTables.length > 0) {
+        return { isCorrupted: true, corruptionType: 'schema' };
+      }
+
+      // Check for data consistency
+      const integrityResult = await this.performIntegrityCheck();
+      if (!integrityResult.isValid) {
+        return { isCorrupted: true, corruptionType: 'data' };
+      }
+
+      return { isCorrupted: false, corruptionType: null };
+    } catch (error) {
+      console.error('Corruption check failed:', error);
+      return { isCorrupted: true, corruptionType: 'access' };
+    }
+  }
+
   async repairDatabase(): Promise<boolean> {
     try {
-      // Attempt to repair by running VACUUM and REINDEX
+      console.log('Starting database repair...');
+      
+      // First, check what type of corruption we're dealing with
+      const { isCorrupted, corruptionType } = await this.checkDatabaseCorruption();
+      
+      if (!isCorrupted) {
+        console.log('Database is not corrupted, no repair needed');
+        return true;
+      }
+
+      console.log(`Detected corruption type: ${corruptionType}`);
+
+      switch (corruptionType) {
+        case 'structural':
+          return this.repairStructuralCorruption();
+        case 'schema':
+          return this.repairSchemaCorruption();
+        case 'data':
+          return this.repairDataCorruption();
+        case 'access':
+          return this.repairAccessCorruption();
+        default:
+          return this.performGenericRepair();
+      }
+    } catch (error) {
+      console.error('Database repair failed:', error);
+      return false;
+    }
+  }
+
+  async runMigrations(): Promise<boolean> {
+    try {
+      console.log('Running database migrations...');
+      
+      // Get current schema version
+      let currentVersion = 0;
+      try {
+        const result = await this.db.getFirstAsync<{ user_version: number }>(
+          'PRAGMA user_version'
+        );
+        currentVersion = result?.user_version || 0;
+      } catch (error) {
+        console.warn('Could not get schema version, assuming version 0');
+      }
+
+      // Define migrations
+      const migrations = [
+        {
+          version: 1,
+          sql: `
+            CREATE TABLE IF NOT EXISTS explored_areas (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              latitude REAL NOT NULL,
+              longitude REAL NOT NULL,
+              radius REAL NOT NULL,
+              explored_at DATETIME NOT NULL,
+              accuracy REAL,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_explored_areas_location ON explored_areas(latitude, longitude);
+          `
+        },
+        {
+          version: 2,
+          sql: `
+            CREATE TABLE IF NOT EXISTS user_stats (
+              id INTEGER PRIMARY KEY,
+              total_areas_explored INTEGER DEFAULT 0,
+              total_distance REAL DEFAULT 0,
+              exploration_percentage REAL DEFAULT 0,
+              current_streak INTEGER DEFAULT 0,
+              longest_streak INTEGER DEFAULT 0,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT OR IGNORE INTO user_stats (id) VALUES (1);
+          `
+        },
+        {
+          version: 3,
+          sql: `
+            CREATE TABLE IF NOT EXISTS achievements (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              type TEXT NOT NULL,
+              name TEXT NOT NULL,
+              description TEXT,
+              unlocked_at DATETIME,
+              progress REAL DEFAULT 0
+            );
+          `
+        }
+      ];
+
+      // Run migrations
+      for (const migration of migrations) {
+        if (currentVersion < migration.version) {
+          console.log(`Running migration to version ${migration.version}`);
+          await this.db.execAsync(migration.sql);
+          await this.db.execAsync(`PRAGMA user_version = ${migration.version}`);
+          currentVersion = migration.version;
+        }
+      }
+
+      console.log(`Database migrations completed, current version: ${currentVersion}`);
+      return true;
+    } catch (error) {
+      console.error('Migration failed:', error);
+      return false;
+    }
+  }
+
+  async reinitialize(): Promise<boolean> {
+    try {
+      console.log('Reinitializing database...');
+      
+      // Close current connection
+      await this.db.closeAsync();
+      
+      // Get a fresh database instance
+      const databaseManager = getDatabaseManager();
+      await databaseManager.reinitialize();
+      this.db = databaseManager.getDatabase();
+      
+      // Run migrations to ensure proper schema
+      const migrationSuccess = await this.runMigrations();
+      
+      if (migrationSuccess) {
+        console.log('Database reinitialization successful');
+        return true;
+      } else {
+        console.error('Database reinitialization failed during migrations');
+        return false;
+      }
+    } catch (error) {
+      console.error('Database reinitialization failed:', error);
+      return false;
+    }
+  }
+
+  // Private repair methods
+  private async repairStructuralCorruption(): Promise<boolean> {
+    try {
+      console.log('Attempting structural corruption repair...');
+      
+      // Try VACUUM to rebuild the database file
+      await this.db.execAsync('VACUUM');
+      
+      // Verify repair
+      const isRepaired = await this.performQuickCheck();
+      if (isRepaired) {
+        console.log('Structural corruption repair successful');
+        return true;
+      }
+      
+      // If VACUUM failed, try reinitialization
+      return this.reinitialize();
+    } catch (error) {
+      console.error('Structural repair failed:', error);
+      return this.reinitialize();
+    }
+  }
+
+  private async repairSchemaCorruption(): Promise<boolean> {
+    try {
+      console.log('Attempting schema corruption repair...');
+      
+      // Run migrations to recreate missing tables
+      return this.runMigrations();
+    } catch (error) {
+      console.error('Schema repair failed:', error);
+      return this.reinitialize();
+    }
+  }
+
+  private async repairDataCorruption(): Promise<boolean> {
+    try {
+      console.log('Attempting data corruption repair...');
+      
+      // Try to salvage data by exporting what we can
+      let salvageableData = null;
+      try {
+        salvageableData = await this.exportSalvageableData();
+      } catch (error) {
+        console.warn('Could not salvage data:', error);
+      }
+      
+      // Reinitialize database
+      const reinitSuccess = await this.reinitialize();
+      if (!reinitSuccess) return false;
+      
+      // Import salvaged data if available
+      if (salvageableData) {
+        try {
+          await this.importSalvagedData(salvageableData);
+          console.log('Salvaged data imported successfully');
+        } catch (error) {
+          console.warn('Could not import salvaged data:', error);
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Data repair failed:', error);
+      return this.reinitialize();
+    }
+  }
+
+  private async repairAccessCorruption(): Promise<boolean> {
+    try {
+      console.log('Attempting access corruption repair...');
+      
+      // This typically requires full reinitialization
+      return this.reinitialize();
+    } catch (error) {
+      console.error('Access repair failed:', error);
+      return false;
+    }
+  }
+
+  private async performGenericRepair(): Promise<boolean> {
+    try {
+      console.log('Attempting generic database repair...');
+      
+      // Try standard repair operations
       await this.db.execAsync('VACUUM');
       await this.db.execAsync('REINDEX');
       
       // Verify repair was successful
       const { isValid } = await this.performIntegrityCheck();
-      return isValid;
+      if (isValid) {
+        console.log('Generic repair successful');
+        return true;
+      }
+      
+      // If standard repair failed, try reinitialization
+      return this.reinitialize();
     } catch (error) {
-      console.error('Database repair failed:', error);
-      return false;
+      console.error('Generic repair failed:', error);
+      return this.reinitialize();
+    }
+  }
+
+  private async exportSalvageableData(): Promise<any> {
+    const salvageableData: any = {
+      exploredAreas: [],
+      userStats: null,
+      achievements: []
+    };
+
+    // Try to salvage explored areas
+    try {
+      salvageableData.exploredAreas = await this.db.getAllAsync<ExploredArea>(
+        'SELECT * FROM explored_areas WHERE latitude IS NOT NULL AND longitude IS NOT NULL'
+      );
+    } catch (error) {
+      console.warn('Could not salvage explored areas:', error);
+    }
+
+    // Try to salvage user stats
+    try {
+      salvageableData.userStats = await this.db.getFirstAsync<UserStats>(
+        'SELECT * FROM user_stats WHERE id = 1'
+      );
+    } catch (error) {
+      console.warn('Could not salvage user stats:', error);
+    }
+
+    // Try to salvage achievements
+    try {
+      salvageableData.achievements = await this.db.getAllAsync<Achievement>(
+        'SELECT * FROM achievements WHERE type IS NOT NULL AND name IS NOT NULL'
+      );
+    } catch (error) {
+      console.warn('Could not salvage achievements:', error);
+    }
+
+    return salvageableData;
+  }
+
+  private async importSalvagedData(data: any): Promise<void> {
+    try {
+      await this.withTransaction(async () => {
+        // Import explored areas
+        if (data.exploredAreas && data.exploredAreas.length > 0) {
+          for (const area of data.exploredAreas) {
+            try {
+              await this.createExploredArea(area);
+            } catch (error) {
+              console.warn('Could not import explored area:', area, error);
+            }
+          }
+        }
+
+        // Import user stats
+        if (data.userStats) {
+          try {
+            const { id, ...stats } = data.userStats;
+            await this.updateUserStats(stats);
+          } catch (error) {
+            console.warn('Could not import user stats:', error);
+          }
+        }
+
+        // Import achievements
+        if (data.achievements && data.achievements.length > 0) {
+          for (const achievement of data.achievements) {
+            try {
+              await this.createAchievement(achievement);
+            } catch (error) {
+              console.warn('Could not import achievement:', achievement, error);
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Failed to import salvaged data:', error);
+      throw error;
     }
   }
 
@@ -319,6 +684,26 @@ export class DatabaseService {
       console.error('Failed to import data:', error);
       throw new Error(`Failed to import data: ${error}`);
     }
+  }
+
+  /**
+   * Calculate distance between two points using Haversine formula
+   * @param lat1 Latitude of first point
+   * @param lon1 Longitude of first point
+   * @param lat2 Latitude of second point
+   * @param lon2 Longitude of second point
+   * @returns Distance in kilometers
+   */
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }
 }
 

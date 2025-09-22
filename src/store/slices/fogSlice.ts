@@ -20,6 +20,10 @@ interface FogSliceState {
       west: number;
     };
   }>;
+  // Cloud system state
+  cloudSystemEnabled: boolean;
+  cloudSystemError: string | null;
+  cloudSystemInitialized: boolean;
 }
 
 const initialState: FogSliceState = {
@@ -32,6 +36,10 @@ const initialState: FogSliceState = {
   cloudDensity: 0.7,
   activeAnimations: [],
   clearingAreas: [],
+  // Cloud system state
+  cloudSystemEnabled: false,
+  cloudSystemError: null,
+  cloudSystemInitialized: false,
 };
 
 const fogSlice = createSlice({
@@ -126,6 +134,41 @@ const fogSlice = createSlice({
         state.cloudDensity = Math.max(0, Math.min(1, action.payload.cloudDensity));
       }
     },
+
+    // Cloud system actions
+    setCloudSystemEnabled: (state, action: PayloadAction<boolean>) => {
+      state.cloudSystemEnabled = action.payload;
+      if (action.payload) {
+        state.cloudSystemError = null; // Clear error when enabling
+      }
+    },
+
+    setCloudSystemError: (state, action: PayloadAction<string | null>) => {
+      state.cloudSystemError = action.payload;
+      if (action.payload) {
+        state.cloudSystemEnabled = false; // Disable on error
+      }
+    },
+
+    setCloudSystemInitialized: (state, action: PayloadAction<boolean>) => {
+      state.cloudSystemInitialized = action.payload;
+    },
+
+    updateCloudState: (state, action: PayloadAction<{
+      enabled?: boolean;
+      error?: string | null;
+      initialized?: boolean;
+    }>) => {
+      if (action.payload.enabled !== undefined) {
+        state.cloudSystemEnabled = action.payload.enabled;
+      }
+      if (action.payload.error !== undefined) {
+        state.cloudSystemError = action.payload.error;
+      }
+      if (action.payload.initialized !== undefined) {
+        state.cloudSystemInitialized = action.payload.initialized;
+      }
+    },
   },
 });
 
@@ -141,6 +184,13 @@ export const {
   resetFogState,
   setCloudAnimationEnabled,
   updateCloudSettings,
+  setCloudSystemEnabled,
+  setCloudSystemError,
+  setCloudSystemInitialized,
+  updateCloudState,
 } = fogSlice.actions;
+
+// Convenience exports
+export const setFogVisible = setFogVisibility;
 
 export default fogSlice.reducer;

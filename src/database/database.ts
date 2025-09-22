@@ -143,6 +143,31 @@ export class DatabaseManager {
     }
   }
 
+  async reinitialize(): Promise<void> {
+    try {
+      console.log('Reinitializing database...');
+      
+      // Close existing connection
+      await this.close();
+      
+      // Delete the database file to start fresh
+      try {
+        await SQLite.deleteDatabaseAsync(this.config.name);
+        console.log('Existing database file deleted');
+      } catch (error) {
+        console.warn('Could not delete database file:', error);
+      }
+      
+      // Initialize fresh database
+      await this.initialize();
+      
+      console.log('Database reinitialization completed');
+    } catch (error) {
+      console.error('Database reinitialization failed:', error);
+      throw error;
+    }
+  }
+
   getDatabase(): SQLite.SQLiteDatabase {
     if (!this.db) {
       throw new Error('Database not initialized. Call initialize() first.');
