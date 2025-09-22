@@ -1,6 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { mapSlice, locationSlice, explorationSlice } from './slices';
 import fogSlice from './slices/fogSlice';
+import profileSlice from './slices/profileSlice';
 
 export const store = configureStore({
   reducer: {
@@ -8,6 +9,7 @@ export const store = configureStore({
     location: locationSlice,
     exploration: explorationSlice,
     fog: fogSlice,
+    profile: profileSlice,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

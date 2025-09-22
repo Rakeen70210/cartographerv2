@@ -1,15 +1,17 @@
 // Mapbox configuration
-// In production, these should come from environment variables or secure storage
+// Access token is loaded from environment variables
 
 export const MAPBOX_CONFIG = {
-  // Replace with your actual Mapbox access token
+  // Mapbox access token from environment variables
   // Get one from https://account.mapbox.com/access-tokens/
-  ACCESS_TOKEN: 'YOUR_MAPBOX_ACCESS_TOKEN',
+  ACCESS_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
   
   // Default map settings
   DEFAULT_STYLE: 'mapbox://styles/mapbox/streets-v12', // Google Maps-like style
   DEFAULT_CENTER: [0, 0] as [number, number], // World center
   DEFAULT_ZOOM: 2,
+  MIN_ZOOM: 0,
+  MAX_ZOOM: 20,
   
   // Animation settings
   ANIMATION_DURATION: 1000,
@@ -23,9 +25,15 @@ export const MAPBOX_CONFIG = {
 
 // Validate that access token is set
 export const validateMapboxConfig = (): boolean => {
-  if (!MAPBOX_CONFIG.ACCESS_TOKEN || MAPBOX_CONFIG.ACCESS_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN') {
-    console.warn('Mapbox access token not configured. Please set a valid token in src/config/mapbox.ts');
+  if (!MAPBOX_CONFIG.ACCESS_TOKEN) {
+    console.warn('Mapbox access token not configured. Please set EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN in your .env file');
     return false;
   }
+  
+  if (!MAPBOX_CONFIG.ACCESS_TOKEN.startsWith('pk.')) {
+    console.warn('Invalid Mapbox access token format. Token should start with "pk."');
+    return false;
+  }
+  
   return true;
 };
