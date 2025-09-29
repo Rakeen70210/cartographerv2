@@ -3,7 +3,7 @@
  * Runs all integration tests, performance tests, and edge case tests
  */
 
-import { testRunner } from '../__tests__/e2e/testRunner';
+import { testRunner } from './comprehensiveTestRunner';
 import { runEdgeCaseTests } from './edgeCaseTesting';
 import { quickPerformanceOptimization } from './performanceOptimization';
 

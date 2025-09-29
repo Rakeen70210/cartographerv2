@@ -4,6 +4,9 @@ module.exports = {
     '@testing-library/jest-native/extend-expect',
     '<rootDir>/src/__tests__/setup.ts'
   ],
+  testPathIgnorePatterns: [
+    '<rootDir>/src/__tests__/setup.ts'
+  ],
   testMatch: [
     '**/__tests__/**/*.(ts|tsx|js)',
     '**/*.(test|spec).(ts|tsx|js)'
@@ -21,7 +24,7 @@ module.exports = {
     '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest'
   },
   testEnvironment: 'jsdom',
-  moduleNameMapping: {
+  moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1'
   },
   testTimeout: 30000

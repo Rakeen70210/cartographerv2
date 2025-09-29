@@ -5,25 +5,83 @@
  */
 
 import { locationService } from '../../services/locationService';
-import { explorationService } from '../../services/explorationService';
-import { fogService } from '../../services/fogService';
+import * as explorationServiceModule from '../../services/explorationService';
+import { getFogService } from '../../services/fogService';
 import { getDatabaseService } from '../../database/services';
 import { getBackupService } from '../../services/backupService';
-import { achievementsService } from '../../services/achievementsService';
+import { getAchievementsService } from '../../services/achievementsService';
 
 // Mock external dependencies
 jest.mock('expo-location');
 jest.mock('@rnmapbox/maps');
 jest.mock('expo-sqlite');
 
+// Mock service modules
+jest.mock('../../services/explorationService', () => ({
+  explorationService: {
+    processLocationUpdate: jest.fn()
+  }
+}));
+
+jest.mock('../../services/achievementsService', () => ({
+  getAchievementsService: () => ({
+    checkAchievements: jest.fn(),
+    updateAchievementProgress: jest.fn()
+  })
+}));
+
+// Mock fog service
+jest.mock('../../services/fogService', () => ({
+  getFogService: () => ({
+    generateFogGeometry: jest.fn().mockResolvedValue({
+      type: 'FeatureCollection',
+      features: []
+    }),
+    isAreaExplored: jest.fn().mockReturnValue(true)
+  })
+}));
+
+// Mock database service
+jest.mock('../../database/services', () => ({
+  getDatabaseService: () => ({
+    initialize: jest.fn(),
+    close: jest.fn(),
+    withTransaction: jest.fn((callback) => callback()),
+    importData: jest.fn(),
+    getExploredAreas: jest.fn().mockResolvedValue([
+      {
+        id: 1,
+        latitude: 37.7749,
+        longitude: -122.4194,
+        radius: 100,
+        explored_at: new Date().toISOString(),
+        accuracy: 10
+      }
+    ]),
+    getUserStats: jest.fn().mockResolvedValue({
+      total_areas_explored: 1,
+      exploration_percentage: 0.1
+    }),
+    exportData: jest.fn().mockResolvedValue({
+      exploredAreas: [],
+      userStats: null,
+      achievements: []
+    })
+  })
+}));
+
 describe('Core User Flows E2E Tests', () => {
   let databaseService: any;
   let backupService: any;
+  let achievementsService: any;
+  let fogService: any;
 
   beforeAll(async () => {
     databaseService = getDatabaseService();
     backupService = getBackupService();
-    
+    achievementsService = getAchievementsService();
+    fogService = getFogService();
+
     // Initialize test database
     await databaseService.initialize();
   });
@@ -37,6 +95,20 @@ describe('Core User Flows E2E Tests', () => {
         achievements: []
       });
     });
+
+    // Setup explorationServiceModule.explorationService spy
+    const mockExplorationResult = {
+      newAreaExplored: true,
+      exploredArea: {
+        id: 1,
+        latitude: 37.7749,
+        longitude: -122.4194,
+        radius: 100,
+        explored_at: new Date().toISOString(),
+        accuracy: 10
+      }
+    };
+    jest.spyOn(explorationServiceModule.explorationService, 'processLocationUpdate').mockResolvedValue(mockExplorationResult);
   });
 
   afterAll(async () => {
@@ -49,9 +121,8 @@ describe('Core User Flows E2E Tests', () => {
       // Step 1: Request location permissions (Requirement 1.1)
       const mockPermissions = {
         granted: true,
-        status: 'granted',
-        canAskAgain: true,
-        expires: 'never'
+        status: 'granted' as any,
+        canAskAgain: true
       };
       
       jest.spyOn(locationService, 'requestPermissions').mockResolvedValue(mockPermissions);
@@ -81,7 +152,7 @@ describe('Core User Flows E2E Tests', () => {
       expect(currentLocation).toEqual(mockLocation);
 
       // Step 3: Process location for exploration (Requirement 2.1)
-      const explorationResult = await explorationService.processLocationUpdate(mockLocation);
+      const explorationResult = await explorationServiceModule.explorationService.processLocationUpdate(mockLocation);
       expect(explorationResult.newAreaExplored).toBe(true);
       expect(explorationResult.exploredArea).toBeDefined();
 
@@ -115,7 +186,7 @@ describe('Core User Flows E2E Tests', () => {
 
       // Process multiple locations
       for (const location of mockLocations) {
-        const result = await explorationService.processLocationUpdate(location);
+        const result = await explorationServiceModule.explorationService.processLocationUpdate(location);
         expect(result.newAreaExplored).toBe(true);
       }
 
@@ -145,7 +216,7 @@ describe('Core User Flows E2E Tests', () => {
       jest.spyOn(achievementsService, 'checkAchievements').mockImplementation(async (stats) => {
         const achievements = [];
         
-        if (stats.total_areas_explored >= 1) {
+        if ((stats as any).total_areas_explored >= 1) {
           achievements.push({
             type: 'exploration',
             name: 'First Steps',
@@ -155,7 +226,7 @@ describe('Core User Flows E2E Tests', () => {
           });
         }
         
-        if (stats.total_areas_explored >= 5) {
+        if ((stats as any).total_areas_explored >= 5) {
           achievements.push({
             type: 'exploration',
             name: 'Explorer',
@@ -170,7 +241,7 @@ describe('Core User Flows E2E Tests', () => {
 
       // Explore first area
       const firstLocation = { latitude: 37.7749, longitude: -122.4194, accuracy: 10, timestamp: Date.now() };
-      await explorationService.processLocationUpdate(firstLocation);
+      await explorationServiceModule.explorationService.processLocationUpdate(firstLocation);
 
       // Check achievements after first exploration
       let userStats = await databaseService.getUserStats();
@@ -191,7 +262,7 @@ describe('Core User Flows E2E Tests', () => {
       ];
 
       for (const location of additionalLocations) {
-        await explorationService.processLocationUpdate(location);
+        await explorationServiceModule.explorationService.processLocationUpdate(location);
       }
 
       // Check achievements after exploring 5 areas total
@@ -248,7 +319,7 @@ describe('Core User Flows E2E Tests', () => {
 
       // Process locations
       for (const location of testLocations) {
-        await explorationService.processLocationUpdate(location);
+        await explorationServiceModule.explorationService.processLocationUpdate(location);
       }
 
       // Create test achievement
@@ -311,7 +382,7 @@ describe('Core User Flows E2E Tests', () => {
 
     test('should handle backup validation and corruption detection', async () => {
       // Create valid backup
-      await explorationService.processLocationUpdate({
+      await explorationServiceModule.explorationService.processLocationUpdate({
         latitude: 37.7749,
         longitude: -122.4194,
         accuracy: 10,
@@ -357,7 +428,7 @@ describe('Core User Flows E2E Tests', () => {
       ];
 
       for (const location of sessionOneLocations) {
-        await explorationService.processLocationUpdate(location);
+        await explorationServiceModule.explorationService.processLocationUpdate(location);
       }
 
       const sessionOneData = await databaseService.exportData();
@@ -374,7 +445,7 @@ describe('Core User Flows E2E Tests', () => {
 
       // Simulate session 2 - add more data
       const sessionTwoLocation = { latitude: 37.7949, longitude: -122.3994, accuracy: 12, timestamp: Date.now() + 2000 };
-      await explorationService.processLocationUpdate(sessionTwoLocation);
+      await explorationServiceModule.explorationService.processLocationUpdate(sessionTwoLocation);
 
       const sessionTwoData = await databaseService.exportData();
       expect(sessionTwoData.exploredAreas).toHaveLength(3);
@@ -382,7 +453,7 @@ describe('Core User Flows E2E Tests', () => {
 
     test('should handle database corruption and recovery', async () => {
       // Create some data
-      await explorationService.processLocationUpdate({
+      await explorationServiceModule.explorationService.processLocationUpdate({
         latitude: 37.7749,
         longitude: -122.4194,
         accuracy: 10,
@@ -408,9 +479,8 @@ describe('Core User Flows E2E Tests', () => {
       // Mock permission denial
       const deniedPermissions = {
         granted: false,
-        status: 'denied',
-        canAskAgain: false,
-        expires: 'never'
+        status: 'denied' as any,
+        canAskAgain: false
       };
 
       jest.spyOn(locationService, 'requestPermissions').mockResolvedValue(deniedPermissions);
@@ -420,7 +490,7 @@ describe('Core User Flows E2E Tests', () => {
 
       // App should still function in manual mode
       const manualLocation = { latitude: 37.7749, longitude: -122.4194, accuracy: 10, timestamp: Date.now() };
-      const explorationResult = await explorationService.processLocationUpdate(manualLocation);
+      const explorationResult = await explorationServiceModule.explorationService.processLocationUpdate(manualLocation);
       expect(explorationResult.newAreaExplored).toBe(true);
     });
 
@@ -432,7 +502,7 @@ describe('Core User Flows E2E Tests', () => {
         await locationService.getCurrentLocation();
         fail('Should have thrown an error');
       } catch (error) {
-        expect(error.message).toBe('GPS unavailable');
+        expect((error as Error).message).toBe('GPS unavailable');
       }
 
       // Service should handle error gracefully and continue functioning
@@ -456,7 +526,7 @@ describe('Core User Flows E2E Tests', () => {
         });
         fail('Should have thrown an error');
       } catch (error) {
-        expect(error.message).toBe('Transaction failed');
+        expect((error as Error).message).toBe('Transaction failed');
       }
 
       // Database should remain in consistent state

@@ -687,6 +687,74 @@ export class DatabaseService {
   }
 
   /**
+   * Alias for getAllExploredAreas (for test compatibility)
+   */
+  async getExploredAreas(): Promise<ExploredArea[]> {
+    return await this.getAllExploredAreas();
+  }
+
+  /**
+   * Database integrity check (for test compatibility)
+   */
+  async checkIntegrity(): Promise<{ isValid: boolean; issues: string[] }> {
+    return await this.performIntegrityCheck();
+  }
+
+
+
+  /**
+   * Attempt database recovery (for test compatibility)
+   */
+  async attemptRecovery(): Promise<{ success: boolean; message?: string }> {
+    try {
+      // Try to repair first
+      const repairSuccess = await this.repairDatabase();
+      
+      if (repairSuccess) {
+        return { success: true, message: 'Database repaired successfully' };
+      }
+
+      // If repair fails, try to salvage data and reinitialize
+      const salvageableData = await this.exportSalvageableData();
+      await this.reinitialize();
+      await this.importSalvagedData(salvageableData);
+      
+      return { success: true, message: 'Database recovered with salvaged data' };
+    } catch (error) {
+      console.error('Database recovery failed:', error);
+      return { success: false, message: `Recovery failed: ${error}` };
+    }
+  }
+
+  /**
+   * Close database connection (for test compatibility)
+   */
+  async close(): Promise<void> {
+    try {
+      if (this._db) {
+        await this._db.closeAsync();
+        this._db = null;
+      }
+    } catch (error) {
+      console.error('Error closing database:', error);
+    }
+  }
+
+  /**
+   * Initialize database (for test compatibility)
+   */
+  async initialize(): Promise<void> {
+    try {
+      const manager = getDatabaseManager();
+      await manager.initialize();
+      // Database will be lazily loaded through the getter
+    } catch (error) {
+      console.error('Database initialize failed:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Calculate distance between two points using Haversine formula
    * @param lat1 Latitude of first point
    * @param lon1 Longitude of first point

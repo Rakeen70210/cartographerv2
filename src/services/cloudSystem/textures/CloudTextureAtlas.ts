@@ -198,20 +198,20 @@ export class ProceduralCloudTextureGenerator {
     seed: number = 12345
   ): TextureData {
     const data = new Uint8Array(width * height);
-    
+
     // Simple noise-based cloud texture
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const nx = x / width;
         const ny = y / height;
-        
+
         // Multi-octave noise
         let value = 0;
         let amplitude = 1;
         let frequency = 4;
-        
+
         for (let i = 0; i < 4; i++) {
-          value += this.noise(nx * frequency + seed, ny * frequency + seed) * amplitude;
+          value += ProceduralCloudTextureGenerator.noise(nx * frequency + seed, ny * frequency + seed) * amplitude;
           amplitude *= 0.5;
           frequency *= 2;
         }
@@ -241,19 +241,19 @@ export class ProceduralCloudTextureGenerator {
     seed: number = 12345
   ): TextureData {
     const data = new Uint8Array(width * height);
-    
+
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const nx = x / width;
         const ny = y / height;
-        
+
         // Stretched noise for wispy effect
-        let value = this.noise(nx * 8 + seed, ny * 2 + seed);
-        value += this.noise(nx * 16 + seed, ny * 4 + seed) * 0.5;
-        value += this.noise(nx * 32 + seed, ny * 8 + seed) * 0.25;
+        let value = ProceduralCloudTextureGenerator.noise(nx * 8 + seed, ny * 2 + seed);
+        value += ProceduralCloudTextureGenerator.noise(nx * 16 + seed, ny * 4 + seed) * 0.5;
+        value += ProceduralCloudTextureGenerator.noise(nx * 32 + seed, ny * 8 + seed) * 0.25;
         
         // Apply falloff from edges for more natural shape
-        const edgeFalloff = this.calculateEdgeFalloff(nx, ny, 0.8);
+        const edgeFalloff = ProceduralCloudTextureGenerator.calculateEdgeFalloff(nx, ny, 0.8);
         value *= edgeFalloff;
         
         // Normalize and convert
@@ -273,27 +273,27 @@ export class ProceduralCloudTextureGenerator {
   }
 
   /**
-   * Generate a dense cumulus cloud texture
-   */
-  public static generateCumulusTexture(
-    width: number,
-    height: number,
-    seed: number = 12345
-  ): TextureData {
-    const data = new Uint8Array(width * height);
-    
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const nx = x / width;
-        const ny = y / height;
-        
-        // Dense, billowy noise
-        let value = this.noise(nx * 6 + seed, ny * 6 + seed);
-        value += this.noise(nx * 12 + seed, ny * 12 + seed) * 0.5;
-        value += this.noise(nx * 24 + seed, ny * 24 + seed) * 0.25;
-        
+    * Generate a dense cumulus cloud texture
+    */
+   public static generateCumulusTexture(
+     width: number,
+     height: number,
+     seed: number = 12345
+   ): TextureData {
+     const data = new Uint8Array(width * height);
+
+     for (let y = 0; y < height; y++) {
+       for (let x = 0; x < width; x++) {
+         const nx = x / width;
+         const ny = y / height;
+
+         // Dense, billowy noise
+         let value = ProceduralCloudTextureGenerator.noise(nx * 6 + seed, ny * 6 + seed);
+         value += ProceduralCloudTextureGenerator.noise(nx * 12 + seed, ny * 12 + seed) * 0.5;
+         value += ProceduralCloudTextureGenerator.noise(nx * 24 + seed, ny * 24 + seed) * 0.25;
+
         // Apply ridged noise for more defined edges
-        const ridge = Math.abs(this.noise(nx * 8 + seed, ny * 8 + seed));
+        const ridge = Math.abs(ProceduralCloudTextureGenerator.noise(nx * 8 + seed, ny * 8 + seed));
         value = Math.max(value, ridge * 0.7);
         
         // Circular falloff for cloud-like shape
@@ -328,19 +328,19 @@ export class ProceduralCloudTextureGenerator {
     seed: number = 12345
   ): TextureData {
     const data = new Uint8Array(width * height);
-    
+
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const nx = x / width;
         const ny = y / height;
-        
+
         // Smooth, low-frequency noise for fog
-        let value = this.noise(nx * 2 + seed, ny * 2 + seed);
-        value += this.noise(nx * 4 + seed, ny * 4 + seed) * 0.3;
-        value += this.noise(nx * 8 + seed, ny * 8 + seed) * 0.1;
+        let value = ProceduralCloudTextureGenerator.noise(nx * 2 + seed, ny * 2 + seed);
+        value += ProceduralCloudTextureGenerator.noise(nx * 4 + seed, ny * 4 + seed) * 0.3;
+        value += ProceduralCloudTextureGenerator.noise(nx * 8 + seed, ny * 8 + seed) * 0.1;
         
         // Very gradual falloff
-        const edgeFalloff = this.calculateEdgeFalloff(nx, ny, 0.9);
+        const edgeFalloff = ProceduralCloudTextureGenerator.calculateEdgeFalloff(nx, ny, 0.9);
         value *= edgeFalloff;
         
         // Normalize and convert

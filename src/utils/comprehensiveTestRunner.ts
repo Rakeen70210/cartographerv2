@@ -3,10 +3,10 @@
  * Integrates all test utilities and provides comprehensive testing suite
  */
 
-import { runAllBackgroundLocationTests } from '../../utils/testBackgroundLocation';
-import { createBackupServiceTester } from '../../utils/testBackupService';
-import { runAllIntegrationTests } from '../../utils/testFogLocationIntegration';
-import { createOfflineServiceTester } from '../../utils/testOfflineService';
+import { runAllBackgroundLocationTests } from './testBackgroundLocation';
+import { createBackupServiceTester } from './testBackupService';
+import { runAllIntegrationTests } from './testFogLocationIntegration';
+import { createOfflineServiceTester } from './testOfflineService';
 
 export interface TestResult {
   testName: string;
@@ -318,15 +318,15 @@ export class ComprehensiveTestRunner {
    */
   private async runTest(testName: string, testFunction: () => Promise<any>): Promise<TestResult> {
     const startTime = Date.now();
-    
+
     try {
       console.log(`  ⏳ Running: ${testName}`);
       const result = await testFunction();
       const endTime = Date.now();
       const duration = endTime - startTime;
-      
+
       console.log(`  ✅ Passed: ${testName} (${duration}ms)`);
-      
+
       return {
         testName,
         success: true,
@@ -336,10 +336,10 @@ export class ComprehensiveTestRunner {
     } catch (error) {
       const endTime = Date.now();
       const duration = endTime - startTime;
-      
+
       console.log(`  ❌ Failed: ${testName} (${duration}ms)`);
       console.log(`     Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
+
       return {
         testName,
         success: false,
@@ -356,33 +356,33 @@ export class ComprehensiveTestRunner {
     console.log('\n' + '='.repeat(60));
     console.log('📊 TEST SUMMARY');
     console.log('='.repeat(60));
-    
+
     console.log(`Overall Result: ${summary.success ? '✅ PASSED' : '❌ FAILED'}`);
     console.log(`Total Duration: ${(summary.totalDuration / 1000).toFixed(2)}s`);
     console.log(`Test Suites: ${summary.passedSuites}/${summary.totalSuites} passed`);
-    
+
     if (summary.failedSuites > 0) {
       console.log(`Failed Suites: ${summary.failedSuites}`);
     }
-    
+
     console.log('\nSuite Details:');
     for (const suite of summary.results) {
       const status = suite.failedTests === 0 ? '✅' : '❌';
       console.log(`  ${status} ${suite.suiteName}: ${suite.passedTests}/${suite.totalTests} tests passed (${(suite.duration / 1000).toFixed(2)}s)`);
-      
+
       if (suite.failedTests > 0) {
-        const failedTests = suite.results.filter(t => !t.success);
+        const failedTests = suite.results.filter((t: TestResult) => !t.success);
         for (const test of failedTests) {
           console.log(`    ❌ ${test.testName}: ${test.error}`);
         }
       }
     }
-    
+
     console.log('='.repeat(60));
   }
 
   // Simulation methods for testing (these would be replaced with actual test implementations)
-  
+
   private async simulateExplorationFlow(): Promise<void> {
     // Simulate complete exploration flow
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -430,7 +430,7 @@ export const testRunner = new ComprehensiveTestRunner();
 // Development helper function
 export const runComprehensiveTests = async (): Promise<void> => {
   const results = await testRunner.runAllTests();
-  
+
   if (!results.success) {
     throw new Error(`Tests failed: ${results.failedSuites} out of ${results.totalSuites} suites failed`);
   }

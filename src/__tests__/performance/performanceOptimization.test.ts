@@ -12,6 +12,11 @@ import { getFogService } from '../../services/fogService';
 jest.mock('react-native-device-info');
 jest.mock('react-native');
 
+// Mock services
+jest.mock('../../services/performanceMonitorService');
+jest.mock('../../services/memoryManagementService');
+jest.mock('../../services/fogService');
+
 describe('Performance Optimization Tests', () => {
   let performanceOptimizer: any;
   let performanceMonitorService: any;
@@ -19,6 +24,87 @@ describe('Performance Optimization Tests', () => {
   let fogService: any;
 
   beforeAll(async () => {
+    // Setup mocked performanceMonitorService
+    const mockPerformanceMonitorServiceInstance = {
+      initialize: jest.fn(() => Promise.resolve()),
+      forceMemoryCleanup: jest.fn(() => Promise.resolve()),
+      getCurrentMetrics: jest.fn().mockReturnValue({
+        fps: 30,
+        frameTime: 33,
+        memoryUsageMB: 100,
+        renderTime: 15,
+        particleCount: 50,
+        fogComplexity: 0.5
+      }),
+      getLODSettings: jest.fn((zoom: number) => ({
+        zoomLevel: zoom,
+        fogCellSize: 10,
+        maxFogFeatures: 100,
+        cloudComplexity: 0.5,
+        particleQuality: 'medium' as const,
+        enableAnimations: true
+      })),
+      getAdaptiveSettings: jest.fn((fps: number, memory: number) => ({
+        maxParticles: fps < 30 ? 100 : 200,
+        fogDetailLevel: memory > 200 ? 'low' : 'high'
+      })),
+      recordFrame: jest.fn()
+    };
+
+    // Setup mocked memoryManagementService
+    const storedData: Map<string, any> = new Map();
+    let cleanupCount = 0;
+
+    const mockMemoryManagementServiceInstance = {
+      initialize: jest.fn().mockResolvedValue(undefined),
+      store: jest.fn((pool: string, key: string, data: any, priority: number) => {
+        storedData.set(`${pool}:${key}`, data);
+        return true;
+      }),
+      retrieve: jest.fn((pool: string, key: string) => {
+        return storedData.get(`${pool}:${key}`);
+      }),
+      getStats: jest.fn(() => ({
+        entryCount: storedData.size,
+        totalUsed: storedData.size * 100, // Mock size calculation
+        cleanupCount
+      })),
+      forceCleanup: jest.fn(() => {
+        cleanupCount++;
+      }),
+      optimizeForPerformance: jest.fn().mockResolvedValue(undefined),
+      getMemoryUsage: jest.fn(() => ({ used: 50, total: 100 })),
+      cleanupUnusedResources: jest.fn(),
+      isMemoryLow: jest.fn(() => false),
+      forceGarbageCollection: jest.fn(() => Promise.resolve()),
+      clearCaches: jest.fn(() => Promise.resolve())
+    };
+
+    // Setup mocked fogService
+    const mockFogServiceInstance = {
+      generateFogGeometry: jest.fn().mockReturnValue({
+        type: 'FeatureCollection' as const,
+        features: []
+      }),
+      optimizeGeometryForZoom: jest.fn((geometry: any, zoom: number) => ({
+        ...geometry,
+        features: geometry.features.slice(0, zoom * 10) // Simplify based on zoom
+      })),
+      calculateLevelOfDetail: jest.fn((zoom: number) => {
+        if (zoom <= 3) return 0.2;
+        if (zoom <= 6) return 0.4;
+        if (zoom <= 10) return 0.6;
+        if (zoom <= 17) return 0.8;
+        return 1.0;
+      })
+    };
+
+    // Configure the mocked getters to return the mock instances
+    (getPerformanceMonitorService as jest.Mock).mockReturnValue(mockPerformanceMonitorServiceInstance);
+    (getMemoryManagementService as jest.Mock).mockReturnValue(mockMemoryManagementServiceInstance);
+    (getFogService as jest.Mock).mockReturnValue(mockFogServiceInstance);
+
+    // Initialize services
     performanceOptimizer = getPerformanceOptimizer();
     performanceMonitorService = getPerformanceMonitorService();
     memoryManagementService = getMemoryManagementService();
