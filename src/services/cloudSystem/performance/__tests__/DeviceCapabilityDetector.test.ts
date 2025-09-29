@@ -98,7 +98,7 @@ describe('DeviceCapabilityDetector', () => {
       expect(capabilities?.gpuTier).toMatch(/^(low|medium|high)$/);
       expect(capabilities?.memoryMB).toBeGreaterThan(0);
       expect(capabilities?.maxTextureSize).toBeGreaterThan(0);
-      expect(capabilities?.webglVersion).toMatch(/^(1|2)$/);
+      expect([1, 2]).toContain(capabilities?.webglVersion);
     });
 
     it('should cache capabilities after first detection', async () => {

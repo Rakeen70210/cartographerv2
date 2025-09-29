@@ -69,12 +69,15 @@ export class AnimationController implements IAnimationController {
     this.driftAnimation = new DriftAnimation();
     this.morphingEffects = new MorphingEffects();
 
-    // Initialize animation state
+    // Initialize animation state with defaults from sub-components
+    const driftState = this.driftAnimation.getAnimationState();
+    const morphState = this.morphingEffects.getAnimationState();
+
     this.currentState = {
       cloudDrift: {
         offset: { x: 0, y: 0 },
-        speed: 0,
-        direction: 0
+        speed: driftState.cloudDrift?.speed ?? 0,
+        direction: driftState.cloudDrift?.direction ?? 0
       },
       dissipation: {
         active: false,
@@ -85,7 +88,7 @@ export class AnimationController implements IAnimationController {
       },
       morphing: {
         noiseOffset: 0,
-        morphSpeed: 0
+        morphSpeed: morphState.morphing?.morphSpeed ?? 0
       }
     };
 
@@ -108,6 +111,10 @@ export class AnimationController implements IAnimationController {
 
     this.driftAnimation.updateConfig(driftConfig);
     this.driftAnimation.start();
+
+    // Update AnimationController state to match drift animation config
+    this.currentState.cloudDrift.speed = windSpeed;
+    this.currentState.cloudDrift.direction = direction;
   }
 
   /**
@@ -175,12 +182,15 @@ export class AnimationController implements IAnimationController {
     if (this.isDisposed) return;
 
     this.morphingEffects.updateConfig({ morphSpeed: speed });
-    
+
     if (speed > 0 && !this.morphingEffects['animationFrameId']) {
       this.morphingEffects.start();
     } else if (speed === 0) {
       this.morphingEffects.stop();
     }
+
+    // Update AnimationController state to match morphing effects config
+    this.currentState.morphing.morphSpeed = speed;
   }
 
   /**
@@ -271,8 +281,8 @@ export class AnimationController implements IAnimationController {
       const deltaTime = now - this.lastFrameTime;
       this.lastFrameTime = now;
 
-      // Calculate current FPS
-      const currentFPS = 1000 / deltaTime;
+      // Calculate current FPS (prevent division by zero)
+      const currentFPS = deltaTime > 0 ? 1000 / deltaTime : this.frameRateStats.current;
       this.updateFrameRateStats(currentFPS);
 
       // Adjust quality if performance is poor

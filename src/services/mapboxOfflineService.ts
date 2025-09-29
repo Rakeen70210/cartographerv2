@@ -62,25 +62,34 @@ export class MapboxOfflineService {
     try {
       const offlinePacks = await MapboxGL.offlineManager.getPacks();
       
+      // Ensure offlinePacks is iterable (could be null/undefined or not an array)
+      if (!offlinePacks || !Array.isArray(offlinePacks)) {
+        console.log('No offline packs found or invalid response from getPacks()');
+        return;
+      }
+      
       for (const pack of offlinePacks) {
-        const metadata = pack.metadata ? JSON.parse(pack.metadata) : {};
-        const status = await MapboxGL.offlineManager.getPackStatus(pack.name);
-        
-        const region: OfflineRegion = {
-          id: pack.name,
-          name: metadata.name || pack.name,
-          bounds: metadata.bounds || [0, 0, 0, 0],
-          minZoom: metadata.minZoom || 0,
-          maxZoom: metadata.maxZoom || 16,
-          styleURL: metadata.styleURL || MapboxGL.StyleURL.Street,
-          downloadState: this.mapDownloadState(status.state),
-          downloadProgress: status.percentage,
-          estimatedTileCount: metadata.estimatedTileCount,
-          downloadedTileCount: status.completedTileCount,
-          downloadedBytes: status.completedTileSize
-        };
+        try {
+          const metadata = pack.metadata ? JSON.parse(pack.metadata) : {};
+          
+          const region: OfflineRegion = {
+            id: pack.name,
+            name: metadata.name || pack.name,
+            bounds: metadata.bounds || [0, 0, 0, 0],
+            minZoom: metadata.minZoom || 0,
+            maxZoom: metadata.maxZoom || 16,
+            styleURL: metadata.styleURL || MapboxGL.StyleURL.Street,
+            downloadState: 'complete', // Assume existing packs are complete
+            downloadProgress: 100,
+            estimatedTileCount: metadata.estimatedTileCount,
+            downloadedTileCount: metadata.downloadedTileCount,
+            downloadedBytes: metadata.downloadedBytes
+          };
 
-        this.offlineRegions.set(region.id, region);
+          this.offlineRegions.set(region.id, region);
+        } catch (packError) {
+          console.warn('Failed to process offline pack:', pack.name, packError);
+        }
       }
 
       console.log(`Loaded ${this.offlineRegions.size} offline regions`);
@@ -179,6 +188,25 @@ export class MapboxOfflineService {
    */
   getOfflineRegion(regionId: string): OfflineRegion | null {
     return this.offlineRegions.get(regionId) || null;
+  }
+
+  /**
+   * Check if there is any offline data available
+   */
+  async hasOfflineData(): Promise<boolean> {
+    try {
+      // Check if we have any offline regions that are complete
+      if (this.offlineRegions.size > 0) {
+        const regions = Array.from(this.offlineRegions.values());
+        return regions.some(region => region.downloadState === 'complete');
+      }
+
+      // If no regions in memory, return false (safer approach)
+      return false;
+    } catch (error) {
+      console.error('Error checking for offline data:', error);
+      return false;
+    }
   }
 
   /**

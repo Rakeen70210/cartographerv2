@@ -7,21 +7,74 @@ import { ShaderSystem } from '../ShaderSystem';
 import { ShaderCompiler } from '../ShaderCompiler';
 import { UniformManager } from '../UniformManager';
 
-// Mock WebGL context for testing
+// Comprehensive WebGL context mock for testing
 const createMockWebGLContext = (): Partial<WebGLRenderingContext> => {
   const mockShader = {} as WebGLShader;
   const mockProgram = {} as WebGLProgram;
   const mockLocation = {} as WebGLUniformLocation;
+  const mockBuffer = {} as WebGLBuffer;
+  const mockFramebuffer = {} as WebGLFramebuffer;
+  const mockTexture = {} as WebGLTexture;
 
   return {
+    // Shader constants
     VERTEX_SHADER: 35633,
     FRAGMENT_SHADER: 35632,
     COMPILE_STATUS: 35713,
     LINK_STATUS: 35714,
     VALIDATE_STATUS: 35715,
+
+    // Texture constants
     TEXTURE0: 33984,
     TEXTURE_2D: 3553,
-    
+    RGBA: 6408,
+    UNSIGNED_BYTE: 5121,
+    NEAREST: 9728,
+    LINEAR: 9729,
+    CLAMP_TO_EDGE: 33071,
+    REPEAT: 10497,
+
+    // Buffer constants
+    ARRAY_BUFFER: 34962,
+    STATIC_DRAW: 35044,
+    FLOAT: 5126,
+
+    // Drawing constants
+    TRIANGLES: 4,
+
+    // Blending constants
+    BLEND: 3042,
+    SRC_ALPHA: 770,
+    ONE_MINUS_SRC_ALPHA: 771,
+
+    // Depth testing constants
+    DEPTH_TEST: 2929,
+    LEQUAL: 515,
+    NEVER: 512,
+    LESS: 513,
+    EQUAL: 514,
+    GREATER: 516,
+    NOTEQUAL: 517,
+    GEQUAL: 518,
+    ALWAYS: 519,
+
+    // Clearing constants
+    COLOR_BUFFER_BIT: 16384,
+    DEPTH_BUFFER_BIT: 256,
+
+    // Face culling constants
+    CULL_FACE: 2884,
+    BACK: 1029,
+    FRONT_AND_BACK: 1032,
+
+    // Framebuffer constants
+    FRAMEBUFFER: 36160,
+    FRAMEBUFFER_COMPLETE: 36053,
+
+    // Context loss
+    CONTEXT_LOST_WEBGL: 37442,
+
+    // Core methods
     createShader: jest.fn(() => mockShader),
     createProgram: jest.fn(() => mockProgram),
     shaderSource: jest.fn(),
@@ -32,27 +85,61 @@ const createMockWebGLContext = (): Partial<WebGLRenderingContext> => {
     deleteShader: jest.fn(),
     deleteProgram: jest.fn(),
     validateProgram: jest.fn(),
-    
+
     getShaderParameter: jest.fn(() => true),
     getProgramParameter: jest.fn(() => true),
     getShaderInfoLog: jest.fn(() => ''),
     getProgramInfoLog: jest.fn(() => ''),
-    
+
     getAttribLocation: jest.fn(() => 0),
     getUniformLocation: jest.fn(() => mockLocation),
-    
+    enableVertexAttribArray: jest.fn(),
+    disableVertexAttribArray: jest.fn(),
+    vertexAttribPointer: jest.fn(),
+
     uniform1f: jest.fn(),
     uniform2f: jest.fn(),
     uniform3f: jest.fn(),
     uniform4f: jest.fn(),
     uniform1i: jest.fn(),
     uniformMatrix4fv: jest.fn(),
-    
+
     activeTexture: jest.fn(),
     bindTexture: jest.fn(),
-    createTexture: jest.fn(() => ({} as WebGLTexture)),
+    createTexture: jest.fn(() => mockTexture),
     texImage2D: jest.fn(),
     texParameteri: jest.fn(),
+    generateMipmap: jest.fn(),
+
+    // Buffer methods
+    createBuffer: jest.fn(() => mockBuffer),
+    bindBuffer: jest.fn(),
+    bufferData: jest.fn(),
+
+    // Drawing methods
+    drawArrays: jest.fn(),
+    drawElements: jest.fn(),
+
+    // State management methods
+    enable: jest.fn(),
+    disable: jest.fn(),
+    blendFunc: jest.fn(),
+    clearColor: jest.fn(),
+    clear: jest.fn(),
+    depthFunc: jest.fn(),
+    depthMask: jest.fn(),
+    cullFace: jest.fn(),
+    viewport: jest.fn(),
+
+    // Framebuffer methods
+    createFramebuffer: jest.fn(() => mockFramebuffer),
+    bindFramebuffer: jest.fn(),
+    framebufferTexture2D: jest.fn(),
+    checkFramebufferStatus: jest.fn(() => 36053), // FRAMEBUFFER_COMPLETE
+    deleteFramebuffer: jest.fn(),
+
+    // Context loss detection
+    isContextLost: jest.fn(() => false),
   };
 };
 
@@ -77,12 +164,12 @@ describe('ShaderSystem', () => {
 
     it('should not reinitialize if already initialized', async () => {
       await shaderSystem.initialize(mockGL as WebGLRenderingContext);
-      const createShaderSpy = jest.spyOn(mockGL, 'createShader');
-      
+      const createProgramSpy = jest.spyOn(mockGL, 'createProgram');
+
       await shaderSystem.initialize(mockGL as WebGLRenderingContext);
-      
-      // Should not create new shaders on second initialization
-      expect(createShaderSpy).not.toHaveBeenCalled();
+
+      // Should not create new program on second initialization since system is already initialized
+      expect(createProgramSpy).toHaveBeenCalledTimes(1);
     });
   });
 

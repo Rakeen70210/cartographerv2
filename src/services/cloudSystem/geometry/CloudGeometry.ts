@@ -93,9 +93,9 @@ export class CloudGrid {
   public getCellsInBounds(bounds: BoundingBox): CloudCell[] {
     const cells: CloudCell[] = [];
     const startX = Math.floor(bounds.minX / this.config.cellSize);
-    const endX = Math.ceil(bounds.maxX / this.config.cellSize);
+    const endX = Math.floor((bounds.maxX - 1) / this.config.cellSize); // Changed from Math.ceil to Math.floor for exclusive bounds
     const startY = Math.floor(bounds.minY / this.config.cellSize);
-    const endY = Math.ceil(bounds.maxY / this.config.cellSize);
+    const endY = Math.floor((bounds.maxY - 1) / this.config.cellSize); // Changed from Math.ceil to Math.floor for exclusive bounds
 
     for (let x = startX; x <= endX; x++) {
       for (let y = startY; y <= endY; y++) {

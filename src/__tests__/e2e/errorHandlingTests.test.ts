@@ -6,10 +6,10 @@
 
 import { locationService } from '../../services/locationService';
 import { explorationService } from '../../services/explorationService';
-import { fogService } from '../../services/fogService';
+import { getFogService } from '../../services/fogService';
 import { getDatabaseService } from '../../database/services';
 import { getOfflineService } from '../../services/offlineService';
-import { errorRecoveryService } from '../../services/errorRecoveryService';
+import { getErrorRecoveryService } from '../../services/errorRecoveryService';
 
 // Mock external dependencies
 jest.mock('expo-location');
@@ -17,13 +17,84 @@ jest.mock('@rnmapbox/maps');
 jest.mock('expo-sqlite');
 jest.mock('@react-native-community/netinfo');
 
+// Mock service modules
+jest.mock('../../services/locationService', () => ({
+  locationService: {
+    requestPermissions: jest.fn(),
+    requestBackgroundPermissions: jest.fn(),
+    getCurrentLocation: jest.fn(),
+    startTracking: jest.fn(),
+    getTrackingStatus: jest.fn()
+  }
+}));
+
+jest.mock('../../services/explorationService', () => ({
+  explorationService: {
+    processLocationUpdate: jest.fn()
+  }
+}));
+
+jest.mock('../../services/fogService', () => ({
+  getFogService: () => ({
+    generateFogGeometry: jest.fn(),
+    updateFogGeometry: jest.fn()
+  })
+}));
+
+jest.mock('../../database/services', () => ({
+  getDatabaseService: () => ({
+    initialize: jest.fn(),
+    close: jest.fn(),
+    withTransaction: jest.fn((callback) => callback()),
+    importData: jest.fn(),
+    getExploredAreas: jest.fn().mockResolvedValue([]),
+    createExploredArea: jest.fn(),
+    checkIntegrity: jest.fn(),
+    attemptRecovery: jest.fn(),
+    getCurrentSchemaVersion: jest.fn(),
+    getRequiredSchemaVersion: jest.fn(),
+    migrateSchema: jest.fn(),
+    rollbackSchema: jest.fn(),
+    getUserStats: jest.fn(),
+    exportData: jest.fn()
+  })
+}));
+
+jest.mock('../../services/offlineService', () => ({
+  getOfflineService: () => ({
+    isOnline: jest.fn(),
+    isOffline: jest.fn(),
+    processOfflineQueue: jest.fn(),
+    getOfflineQueueStatus: jest.fn(),
+    getCachedMapTile: jest.fn(),
+    resolveDataConflicts: jest.fn()
+  })
+}));
+
+jest.mock('../../services/errorRecoveryService', () => ({
+  getErrorRecoveryService: () => ({
+    reset: jest.fn(),
+    handleMapTileError: jest.fn(),
+    detectMemoryPressure: jest.fn(),
+    performEmergencyCleanup: jest.fn(),
+    checkStorageSpace: jest.fn(),
+    performStorageCleanup: jest.fn(),
+    handleServiceError: jest.fn(),
+    attemptServiceRecovery: jest.fn()
+  })
+}));
+
 describe('Error Handling and Edge Case Tests', () => {
   let databaseService: any;
   let offlineService: any;
+  let errorRecoveryService: any;
+  let fogService: any;
 
   beforeAll(async () => {
     databaseService = getDatabaseService();
     offlineService = getOfflineService();
+    errorRecoveryService = getErrorRecoveryService();
+    fogService = getFogService();
     await databaseService.initialize();
   });
 

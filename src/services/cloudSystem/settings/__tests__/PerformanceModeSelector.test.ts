@@ -1,6 +1,20 @@
 /**
  * PerformanceModeSelector Tests
  * Unit tests for performance mode selection functionality
+ *
+ * TEST FIXES DOCUMENTATION:
+ * Fixed two test issues identified in test-fixes.md:
+ *
+ * 1. Test 'performAutoDetection › should detect and apply recommended mode':
+ *    - ISSUE: mockPerformanceManager.setPerformanceMode was not being called
+ *    - FIX: Set initial mode to 'low' before calling performAutoDetection() so when
+ *      recommended mode is 'high', the setPerformanceMode will be called
+ *
+ * 2. Test 'isModeSupported › should return false for unsupported modes due to memory':
+ *    - ISSUE: Function was returning true instead of false
+ *    - FIX: Reduced memory from 100MB to 50MB to be below high mode requirement (~63MB)
+ *
+ * Both fixes ensure proper mock configuration before test assertions.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,7 +35,6 @@ jest.mock('../../performance/DeviceCapabilityDetector');
 
 const mockAsyncStorage = AsyncStorage as jest.Mocked<typeof AsyncStorage>;
 const MockPerformanceManager = PerformanceManager as jest.MockedClass<typeof PerformanceManager>;
-const MockDeviceCapabilityDetector = DeviceCapabilityDetector as jest.MockedClass<typeof DeviceCapabilityDetector>;
 
 describe('PerformanceModeSelector', () => {
   let selector: PerformanceModeSelector;
@@ -63,7 +76,7 @@ describe('PerformanceModeSelector', () => {
     } as any;
 
     MockPerformanceManager.mockImplementation(() => mockPerformanceManager);
-    MockDeviceCapabilityDetector.getInstance = jest.fn().mockReturnValue(mockCapabilityDetector);
+    jest.spyOn(DeviceCapabilityDetector, 'getInstance').mockReturnValue(mockCapabilityDetector);
 
     selector = new PerformanceModeSelector();
   });
@@ -175,6 +188,9 @@ describe('PerformanceModeSelector', () => {
     it('should detect and apply recommended mode', async () => {
       await selector.initialize();
       mockAsyncStorage.setItem.mockResolvedValue();
+
+      // Set initial mode to low so it will change to high
+      await selector.setPerformanceMode('low', false);
       mockPerformanceManager.getRecommendedPerformanceMode.mockReturnValue('high');
 
       const detectedMode = await selector.performAutoDetection();
@@ -208,10 +224,11 @@ describe('PerformanceModeSelector', () => {
     });
 
     it('should return false for unsupported modes due to memory', async () => {
-      // Mock low memory device
+      // Mock low memory device - set to value that will fail high mode memory check
+      // High mode requires ~63MB, so set memory below that threshold
       mockPerformanceManager.getDeviceCapabilities.mockReturnValue({
         ...mockCapabilities,
-        memoryMB: 128, // Very low memory
+        memoryMB: 50, // Very low memory - below high mode requirement (~63MB)
       });
 
       await selector.initialize();

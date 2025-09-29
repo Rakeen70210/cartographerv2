@@ -133,11 +133,11 @@ export class CloudDensityCalculator {
 
     // Urban heat island effect - fewer clouds in dense urban areas
     const urbanFactor = 1 - context.urbanDensity * 0.2; // 20% reduction in dense urban areas
-    modifiedDensity *= urbanFactor;
+    modifiedDensity *= Math.max(0.1, urbanFactor); // Ensure minimum factor to prevent total density loss
 
-    // Temperature and humidity effects
-    const temperatureFactor = NoiseUtils.smoothStep(10, 30, context.temperature); // Optimal cloud temp range
-    const humidityFactor = context.humidity; // More humidity = more clouds
+    // Temperature and humidity effects - ensure minimum values to prevent total density loss
+    const temperatureFactor = Math.max(0.1, NoiseUtils.smoothStep(10, 30, context.temperature)); // Optimal cloud temp range
+    const humidityFactor = Math.max(0.1, context.humidity); // More humidity = more clouds, minimum 0.1
     modifiedDensity *= temperatureFactor * humidityFactor;
 
     return modifiedDensity;
@@ -152,7 +152,7 @@ export class CloudDensityCalculator {
     falloffDistance: number
   ): number {
     if (density < threshold) {
-      return 0;
+      return Math.max(0, density); // Return small positive values instead of 0 to preserve geographic variation
     }
 
     if (falloffDistance <= 0) {
@@ -162,14 +162,14 @@ export class CloudDensityCalculator {
     // Smooth falloff above threshold
     const falloffStart = threshold;
     const falloffEnd = threshold + falloffDistance;
-    
+
     if (density > falloffEnd) {
       return density;
     }
 
     const falloffProgress = (density - falloffStart) / falloffDistance;
     const smoothFalloff = NoiseUtils.smoothStep(0, 1, falloffProgress);
-    
+
     return threshold + (density - threshold) * smoothFalloff;
   }
 

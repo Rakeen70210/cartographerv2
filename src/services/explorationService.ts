@@ -20,6 +20,14 @@ export interface ExplorationResult {
   explorationRadius: number;
 }
 
+export interface LocationProcessingResult {
+  newAreaExplored: boolean;
+  rejectionReason?: string;
+  exploredArea?: ExploredArea;
+  source?: string;
+  warnings?: string[];
+}
+
 export class ExplorationService {
   private static instance: ExplorationService;
   private databaseService = getDatabaseService();
@@ -27,6 +35,7 @@ export class ExplorationService {
   private config: ExplorationConfig;
   private pendingLocations: Map<string, { location: LocationUpdate; timestamp: number }> = new Map();
   private isProcessing: boolean = false;
+  private lastValidLocation: LocationUpdate | null = null;
 
   private constructor() {
     this.config = {
@@ -388,6 +397,56 @@ export class ExplorationService {
   }
 
   /**
+   * Process a location update (for testing compatibility)
+   */
+  public async processLocationUpdate(location: LocationUpdate): Promise<LocationProcessingResult> {
+    try {
+      // Validate location data
+      if (!this.isLocationValid(location)) {
+        return {
+          newAreaExplored: false,
+          rejectionReason: 'invalid_data'
+        };
+      }
+
+      // Check accuracy threshold
+      if (location.accuracy > this.config.minAccuracyThreshold) {
+        return {
+          newAreaExplored: false,
+          rejectionReason: 'poor_accuracy'
+        };
+      }
+
+      // Check for impossible jumps if we have previous location
+      if (this.lastValidLocation && this.isImpossibleJump(this.lastValidLocation, location)) {
+        return {
+          newAreaExplored: false,
+          rejectionReason: 'impossible_jump'
+        };
+      }
+
+      // Process the location
+      const explorationResult = await this.detectExploration(location);
+      
+      if (explorationResult.isNewArea) {
+        this.lastValidLocation = location;
+      }
+
+      return {
+        newAreaExplored: explorationResult.isNewArea,
+        exploredArea: explorationResult.exploredArea,
+        source: 'manual'
+      };
+    } catch (error) {
+      console.error('Error processing location update:', error);
+      return {
+        newAreaExplored: false,
+        rejectionReason: 'processing_error'
+      };
+    }
+  }
+
+  /**
    * Force process a manual location (for testing or manual exploration)
    */
   public async processManualLocation(
@@ -523,6 +582,51 @@ export class ExplorationService {
       pendingLocations: this.pendingLocations.size,
       hasPermissions: locationStatus.hasPermissions
     };
+  }
+
+  /**
+   * Validate location data
+   */
+  private isLocationValid(location: LocationUpdate): boolean {
+    // Check for valid latitude (-90 to 90)
+    if (location.latitude < -90 || location.latitude > 90 || isNaN(location.latitude)) {
+      return false;
+    }
+
+    // Check for valid longitude (-180 to 180)
+    if (location.longitude < -180 || location.longitude > 180 || isNaN(location.longitude)) {
+      return false;
+    }
+
+    // Check for valid accuracy (must be positive)
+    if (location.accuracy < 0 || isNaN(location.accuracy)) {
+      return false;
+    }
+
+    // Check for valid timestamp
+    if (!location.timestamp || location.timestamp <= 0) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Check if location jump is impossible (teleportation detection)
+   */
+  private isImpossibleJump(previousLocation: LocationUpdate, currentLocation: LocationUpdate): boolean {
+    const distance = calculateDistance(
+      previousLocation.latitude,
+      previousLocation.longitude,
+      currentLocation.latitude,
+      currentLocation.longitude
+    );
+
+    const timeDiff = Math.abs(currentLocation.timestamp - previousLocation.timestamp) / 1000; // seconds
+    const maxPossibleSpeed = 100; // 100 m/s (~360 km/h, very generous for any reasonable travel)
+
+    // If distance is greater than what's possible at max speed, it's impossible
+    return distance > (maxPossibleSpeed * timeDiff);
   }
 }
 

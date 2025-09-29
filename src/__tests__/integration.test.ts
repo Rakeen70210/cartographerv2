@@ -2,7 +2,7 @@
  * Integration Test to verify test setup and basic functionality
  */
 
-import { testRunner } from './e2e/testRunner';
+import { testRunner } from '../utils/comprehensiveTestRunner';
 
 describe('Integration Tests', () => {
   test('should run comprehensive test suite', async () => {

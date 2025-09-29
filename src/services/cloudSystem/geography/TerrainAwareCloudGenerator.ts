@@ -86,7 +86,7 @@ export class TerrainAwareCloudGenerator implements IProceduralCloudGenerator {
       
       // Update the patch density map
       for (let i = 0; i < patch.densityMap.length; i++) {
-        patch.densityMap[i] = modifiedDensity;
+        patch.densityMap[i] = Math.max(0, Math.min(1, patch.densityMap[i] * modifiedDensity));
       }
     }
   }
@@ -432,17 +432,15 @@ export class TerrainAwareCloudGenerator implements IProceduralCloudGenerator {
     return {
       id: `terrain_patch_${Date.now()}`,
       bounds: {
-        minX: worldBounds.minX,
-        minY: worldBounds.minY,
-        maxX: worldBounds.maxX,
-        maxY: worldBounds.maxY
+        minX: bounds.west,
+        minY: bounds.south,
+        maxX: bounds.east,
+        maxY: bounds.north
       },
       vertices,
       indices,
       densityMap: densityField,
-      textureCoords: texCoords,
-      vertexCount: resolution * resolution,
-      indexCount: indices.length
+      textureCoords: texCoords
     };
   }
 

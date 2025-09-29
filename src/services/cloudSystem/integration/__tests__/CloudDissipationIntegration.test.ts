@@ -106,6 +106,16 @@ describe('CloudDissipationIntegration', () => {
         dissipationEvents.push(event);
       });
 
+      // Mock the explorationService.processManualLocation method
+      const mockExplorationResult = {
+        isNewArea: true,
+        newlyExploredArea: mockExploredArea,
+        updatedFogGrid: new Uint8Array([1, 2, 3, 4, 5])
+      };
+
+      const { explorationService } = require('../../../explorationService');
+      jest.spyOn(explorationService, 'processManualLocation').mockResolvedValue(mockExplorationResult);
+
       // Simulate exploration result (this would normally come from the exploration service)
       // Since we can't directly call the private method, we'll test the public interface
       await integration.triggerManualDissipation(

@@ -6,7 +6,7 @@
 import { edgeCaseTester, runEdgeCaseTests } from '../../utils/edgeCaseTesting';
 import { getErrorRecoveryService } from '../../services/errorRecoveryService';
 import { locationService } from '../../services/locationService';
-import { explorationService } from '../../services/explorationService';
+import * as explorationServiceModule from '../../services/explorationService';
 import { getDatabaseService } from '../../database/services';
 import { getOfflineService } from '../../services/offlineService';
 
@@ -16,6 +16,40 @@ jest.mock('@rnmapbox/maps');
 jest.mock('expo-sqlite');
 jest.mock('@react-native-community/netinfo');
 jest.mock('react-native');
+
+// Mock service modules
+jest.mock('../../services/explorationService', () => ({
+  explorationService: {
+    processLocationUpdate: jest.fn()
+  }
+}));
+
+jest.mock('../../services/errorRecoveryService', () => ({
+  getErrorRecoveryService: () => ({
+    reset: jest.fn(),
+    handleLocationError: jest.fn().mockResolvedValue(true),
+    handleDatabaseError: jest.fn().mockResolvedValue(true),
+    handleNetworkError: jest.fn().mockResolvedValue(true),
+    handleServiceError: jest.fn().mockResolvedValue({ canRecover: true, fallbackStrategy: 'retry', retryAfter: 1000 }),
+    attemptServiceRecovery: jest.fn().mockResolvedValue({ service: 'location', recovered: true, attempts: 1, recoveryMethod: 'restart' }),
+    handleMapTileError: jest.fn().mockResolvedValue({ retry: true, fallbackStrategy: 'retry_with_delay' }),
+    getErrorStats: jest.fn().mockReturnValue({ totalErrors: 0, errorsByService: { location: 0, database: 0, network: 0 }, recentErrors: [], recoveryRate: 1.0 }),
+    clearErrorHistory: jest.fn(),
+    detectMemoryPressure: jest.fn().mockReturnValue({ isUnderPressure: false, availableMemoryMB: 500, usedMemoryMB: 200, pressureLevel: 'low' }),
+    performEmergencyCleanup: jest.fn().mockResolvedValue({ success: true, freedMemoryMB: 50, cleanupActions: ['cleared_cache'], cleanupActionsCount: 1 }),
+    checkStorageSpace: jest.fn().mockResolvedValue({ totalSpaceMB: 1000, availableSpaceMB: 800, usedSpaceMB: 200, isLow: false, isCritical: false }),
+    performStorageCleanup: jest.fn().mockResolvedValue({ success: true, freedSpaceMB: 100, cleanupActions: ['removed_temp_files'], cleanupActionsCount: 1 })
+  })
+}));
+
+jest.mock('../../services/offlineService', () => ({
+  getOfflineService: () => ({
+    isOnline: jest.fn().mockReturnValue(true),
+    isOffline: jest.fn().mockReturnValue(false),
+    handleNetworkError: jest.fn().mockResolvedValue(true),
+    resolveDataConflicts: jest.fn().mockResolvedValue({ resolution: 'local_wins', conflicts: [] })
+  })
+}));
 
 describe('Edge Case Integration Tests', () => {
   let errorRecoveryService: any;
@@ -34,6 +68,13 @@ describe('Edge Case Integration Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     errorRecoveryService.reset();
+
+    // Setup explorationServiceModule.explorationService mock
+    const mockExplorationResult = {
+      newAreaExplored: false,
+      rejectionReason: 'poor_accuracy'
+    };
+    (explorationServiceModule.explorationService.processLocationUpdate as jest.Mock).mockResolvedValue(mockExplorationResult);
   });
 
   afterAll(async () => {
@@ -79,7 +120,7 @@ describe('Edge Case Integration Tests', () => {
         timestamp: Date.now()
       };
 
-      const result = await explorationService.processLocationUpdate(poorLocation);
+      const result = await explorationServiceModule.explorationService.processLocationUpdate(poorLocation);
       
       // Poor accuracy should be rejected
       expect(result.newAreaExplored).toBe(false);
@@ -111,7 +152,7 @@ describe('Edge Case Integration Tests', () => {
 
       const results = [];
       for (const location of locations) {
-        const result = await explorationService.processLocationUpdate(location);
+        const result = await explorationServiceModule.explorationService.processLocationUpdate(location);
         results.push({
           accepted: result.newAreaExplored,
           reason: result.rejectionReason
@@ -181,7 +222,7 @@ describe('Edge Case Integration Tests', () => {
         
         fail('Transaction should have thrown an error');
       } catch (error) {
-        expect(error.message).toBe('Simulated transaction error');
+        expect((error as Error).message).toBe('Simulated transaction error');
         
         // Verify rollback - no data should be persisted
         const exploredAreas = await databaseService.getExploredAreas();
@@ -357,7 +398,7 @@ describe('Edge Case Integration Tests', () => {
       const results = [];
       for (const location of invalidLocations) {
         try {
-          const result = await explorationService.processLocationUpdate(location);
+          const result = await explorationServiceModule.explorationService.processLocationUpdate(location);
           results.push({
             accepted: result.newAreaExplored,
             reason: result.rejectionReason || 'invalid_data'
@@ -389,7 +430,7 @@ describe('Edge Case Integration Tests', () => {
         fail('Should have thrown an error for corrupted data');
       } catch (error) {
         expect(error).toBeDefined();
-        expect(error.message).toBeDefined();
+        expect((error as Error).message).toBeDefined();
       }
     });
 
