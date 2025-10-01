@@ -38,6 +38,7 @@
     "@react-native-community/netinfo": "11.4.1",
     "@reduxjs/toolkit": "^2.9.0",
     "@rnmapbox/maps": "^10.1.44",
+    "@shopify/react-native-skia": "^2.2.21",
     "expo": "~54.0.7",
     "expo-document-picker": "~14.0.7",
     "expo-file-system": "~19.0.14",
