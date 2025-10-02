@@ -346,23 +346,7 @@ jest.mock('../services/fogService', () => ({
   fogService: mockFogService,
 }));
 
-// Mock fog animation service
-const mockFogAnimationService = {
-  startFogClearingAnimation: jest.fn(() => 'animation_id_123'),
-  cancelAnimation: jest.fn(),
-  cancelAllAnimations: jest.fn(),
-  getActiveAnimations: jest.fn(() => []),
-  setAnimationUpdateCallback: jest.fn(),
-  hasActiveAnimations: jest.fn(() => false),
-  getPerformanceMode: jest.fn(() => false),
-  setPerformanceMode: jest.fn(),
-  updateConfig: jest.fn(),
-};
-
-jest.mock('../services/fogAnimationService', () => ({
-  FogAnimationService: jest.fn(() => mockFogAnimationService),
-  getFogAnimationService: jest.fn(() => mockFogAnimationService),
-}));
+// Note: fogAnimationService mock removed - animations now handled by SkiaFogOverlay
 
 // Mock exploration service
 const mockExplorationService = {

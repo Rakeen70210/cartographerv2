@@ -1,19 +1,26 @@
 # Product Overview
 
-Cartographer is a React Native mobile application that gamifies real-world exploration through a fog-of-war map interface. Users physically explore their surroundings to reveal areas on an interactive map, creating an engaging location-based gaming experience.
+Cartographer is a React Native mobile application that gamifies real-world exploration through a fog-of-war map interface. Users explore physical locations to reveal areas on their map, creating an engaging outdoor adventure experience.
 
 ## Core Features
 
-- **Fog-of-War Mapping**: Areas remain hidden until physically visited
-- **Real-time Location Tracking**: GPS integration for exploration detection
-- **Cross-platform Support**: iOS and Android deployment via Expo
-- **Offline Capability**: Local SQLite database for exploration data
-- **Background Location**: Continues tracking when app is backgrounded
+- **Fog-of-War Mapping**: Interactive map with fog overlay that clears as users explore real locations
+- **Location-Based Exploration**: GPS tracking to detect visited areas and update exploration progress
+- **Cloud System**: Advanced visual effects using Skia rendering for atmospheric fog and cloud animations
+- **Offline Support**: Map data caching and offline exploration tracking
+- **Achievement System**: Gamification through exploration milestones and statistics
+- **Background Tracking**: Continuous location monitoring for seamless exploration updates
+
+## Target Platforms
+
+- iOS and Android via Expo managed workflow
+- Cross-platform deployment with over-the-air updates
+- Web support for development and testing
 
 ## Key Technologies
 
-- Mapbox for interactive mapping
-- Expo Location Services for GPS tracking
+- React Native with Expo
+- Mapbox for mapping services
+- React Native Skia for advanced graphics
 - SQLite for local data persistence
-- Redux for state management
-- Background task processing for continuous location updates
+- Redux Toolkit for state management

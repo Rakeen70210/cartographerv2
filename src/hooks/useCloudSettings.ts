@@ -4,8 +4,10 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { CloudSettings } from '../types/cloud';
+import { CloudSettings, WindConfig } from '../types/cloud';
 import { CloudSettingsManager } from '../services/cloudSystem/settings';
+import { useAppDispatch } from '../store/hooks';
+import { updateCloudSettings, updateWindSettings } from '../store/slices/fogSlice';
 
 let settingsManagerInstance: CloudSettingsManager | null = null;
 
@@ -22,8 +24,11 @@ export interface UseCloudSettingsReturn {
   error: string | null;
   updateSetting: <K extends keyof CloudSettings>(key: K, value: CloudSettings[K]) => Promise<void>;
   updateSettings: (newSettings: Partial<CloudSettings>) => Promise<void>;
+  updateWindConfig: (windConfig: Partial<WindConfig>) => Promise<void>;
+  updateAnimationSettings: (animationSettings: { animationSpeed?: number; density?: number }) => Promise<void>;
   resetToDefaults: () => Promise<void>;
   isValidSetting: <K extends keyof CloudSettings>(key: K, value: CloudSettings[K]) => boolean;
+  syncWithRedux: () => void;
 }
 
 export const useCloudSettings = (): UseCloudSettingsReturn => {
@@ -34,6 +39,7 @@ export const useCloudSettings = (): UseCloudSettingsReturn => {
   const [error, setError] = useState<string | null>(null);
 
   const settingsManager = getSettingsManager();
+  const dispatch = useAppDispatch();
 
   // Load settings on mount
   useEffect(() => {
@@ -54,10 +60,23 @@ export const useCloudSettings = (): UseCloudSettingsReturn => {
     loadSettings();
   }, [settingsManager]);
 
-  // Listen for settings changes
+  // Listen for settings changes and sync with Redux
   useEffect(() => {
     const handleSettingsChange = (newSettings: CloudSettings) => {
       setSettings(newSettings);
+      
+      // Sync with Redux store for real-time updates
+      dispatch(updateCloudSettings({
+        animationSpeed: newSettings.animationSpeed,
+        cloudDensity: newSettings.density,
+      }));
+      
+      dispatch(updateWindSettings({
+        direction: newSettings.wind.direction,
+        speed: newSettings.wind.speed,
+        enabled: newSettings.wind.enabled,
+        turbulence: newSettings.wind.turbulence,
+      }));
     };
 
     settingsManager.addSettingsListener(handleSettingsChange);
@@ -65,7 +84,7 @@ export const useCloudSettings = (): UseCloudSettingsReturn => {
     return () => {
       settingsManager.removeSettingsListener(handleSettingsChange);
     };
-  }, [settingsManager]);
+  }, [settingsManager, dispatch]);
 
   // Update a single setting
   const updateSetting = useCallback(async <K extends keyof CloudSettings>(
@@ -107,6 +126,64 @@ export const useCloudSettings = (): UseCloudSettingsReturn => {
     }
   }, [settingsManager]);
 
+  // Update wind configuration specifically
+  const updateWindConfig = useCallback(async (windConfig: Partial<WindConfig>): Promise<void> => {
+    try {
+      setError(null);
+      await settingsManager.updateWindConfig(windConfig);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update wind configuration';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [settingsManager]);
+
+  // Update animation settings (speed and density) with real-time updates and validation
+  const updateAnimationSettings = useCallback(async (animationSettings: { 
+    animationSpeed?: number; 
+    density?: number 
+  }): Promise<void> => {
+    try {
+      setError(null);
+      
+      // Use the settings manager's validation method
+      const validationResult = await settingsManager.updateAnimationSettings(animationSettings);
+      
+      // Log warnings if any
+      if (validationResult.warnings.length > 0) {
+        console.warn('Animation settings warnings:', validationResult.warnings);
+      }
+      
+      // Immediately sync with Redux for real-time updates
+      if (validationResult.adjustedValue) {
+        dispatch(updateCloudSettings({
+          animationSpeed: validationResult.adjustedValue.animationSpeed,
+          cloudDensity: validationResult.adjustedValue.density,
+        }));
+      }
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update animation settings';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [settingsManager, dispatch]);
+
+  // Sync current settings with Redux store
+  const syncWithRedux = useCallback(() => {
+    dispatch(updateCloudSettings({
+      animationSpeed: settings.animationSpeed,
+      cloudDensity: settings.density,
+    }));
+    
+    dispatch(updateWindSettings({
+      direction: settings.wind.direction,
+      speed: settings.wind.speed,
+      enabled: settings.wind.enabled,
+      turbulence: settings.wind.turbulence,
+    }));
+  }, [settings, dispatch]);
+
   // Validate a setting value
   const isValidSetting = useCallback(<K extends keyof CloudSettings>(
     key: K,
@@ -122,7 +199,10 @@ export const useCloudSettings = (): UseCloudSettingsReturn => {
     error,
     updateSetting,
     updateSettings,
+    updateWindConfig,
+    updateAnimationSettings,
     resetToDefaults,
     isValidSetting,
+    syncWithRedux,
   };
 };

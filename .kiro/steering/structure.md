@@ -1,54 +1,89 @@
 # Project Structure & Architecture
 
-## Folder Organization
-
+## Root Directory Organization
 ```
-src/
-├── components/     # React Native UI components
-├── services/       # Business logic and external service integrations
-├── database/       # SQLite schema, queries, and database utilities
-├── store/          # Redux store configuration and state slices
-├── types/          # TypeScript type definitions
-├── hooks/          # Custom React hooks
-├── utils/          # Utility functions and constants
-└── config/         # Configuration files (Mapbox, etc.)
+├── src/                    # Main source code
+├── assets/                 # Static assets (images, icons)
+├── android/               # Android-specific native code
+├── scripts/               # Build and deployment scripts
+├── docs/                  # Documentation and design files
+├── store-config/          # App store metadata and configs
+└── .kiro/                 # Kiro AI assistant configuration
 ```
 
-## Architecture Patterns
+## Source Code Architecture (`src/`)
 
-### State Management
-- **Redux Toolkit** with feature-based slices: `mapSlice`, `locationSlice`, `explorationSlice`, `fogSlice`
-- Typed hooks in `src/store/hooks.ts` for `useAppDispatch` and `useAppSelector`
-- Store configuration with serializable check middleware
+### Core Directories
+- **`components/`**: React Native UI components with barrel exports
+- **`services/`**: Business logic, external integrations, and singleton services
+- **`database/`**: SQLite schema, queries, and data access layer
+- **`store/`**: Redux Toolkit store configuration, slices, and selectors
+- **`types/`**: TypeScript type definitions and interfaces
+- **`utils/`**: Utility functions, constants, and helper modules
+- **`hooks/`**: Custom React hooks for shared logic
+- **`config/`**: Configuration files and validation
 
-### Service Layer
-- Singleton services for core functionality (LocationService, FogService, etc.)
-- Services handle external integrations and complex business logic
-- Background task management through `taskManager.ts`
+### Service Layer Architecture
+Services follow a singleton pattern with factory functions:
+```typescript
+// Pattern: getServiceName() factory function
+export const getLocationService = () => LocationService.getInstance();
+```
 
-### Component Structure
-- Barrel exports in `index.ts` files for clean imports
-- Components focused on UI rendering, business logic delegated to services
-- Main app structure: `App.tsx` → `MapScreen` → `MapContainer` + overlays
+Key service categories:
+- **Core Services**: Location, exploration, fog rendering
+- **Integration Services**: Mapbox, background tasks, cloud system
+- **Utility Services**: Statistics, achievements, backup, offline support
+- **Performance Services**: Memory management, device capabilities, monitoring
+
+### Component Organization
+- **Barrel exports** in `index.ts` files for clean imports
+- **Screen components**: Top-level navigation screens (MapScreen, ProfileScreen)
+- **Container components**: Business logic containers (MapContainer)
+- **UI components**: Reusable interface elements
+- **Overlay components**: Fog, cloud, and particle systems
+
+### State Management Pattern
+- **Redux Toolkit** with feature-based slices
+- **Typed hooks** for store access (`useAppSelector`, `useAppDispatch`)
+- **Selectors** for computed state and memoization
+- **Persistence** layer for state hydration
 
 ### Database Layer
-- SQLite schema definitions in `schema.ts`
-- Database utilities and connection management in `database.ts`
-- Service layer methods in `services.ts`
+- **Schema definitions** in `schema.ts` with SQL DDL
+- **Service layer** for data operations and business logic
+- **Initialization utilities** for database setup and migrations
+- **Spatial indexing** for location-based queries
 
-## Code Conventions
+## File Naming Conventions
+- **Components**: PascalCase (e.g., `MapContainer.tsx`)
+- **Services**: camelCase with Service suffix (e.g., `locationService.ts`)
+- **Types**: camelCase (e.g., `location.ts`, `fog.ts`)
+- **Utilities**: camelCase (e.g., `spatial.ts`, `constants.ts`)
+- **Tests**: Match source file with `.test.ts` suffix
 
-### File Naming
-- PascalCase for components: `MapContainer.tsx`
-- camelCase for services: `locationService.ts`
-- Barrel exports via `index.ts` in each directory
+## Import/Export Patterns
+- Use **barrel exports** (`index.ts`) for public APIs
+- **Relative imports** within feature directories
+- **Absolute imports** from `src/` for cross-feature dependencies
+- **Service initialization** handled in `services/index.ts`
 
-### Import Structure
-- External dependencies first
-- Internal imports grouped by: types, components, services, utils
-- Relative imports for same-directory files
+## Cloud System Architecture
+The cloud system is organized as a comprehensive subsystem:
+```
+src/services/cloudSystem/
+├── animation/          # Animation controllers and effects
+├── geometry/           # Spatial calculations and cloud shapes
+├── integration/        # Mapbox and fog system integration
+├── performance/        # Optimization and device adaptation
+├── settings/           # Configuration and customization
+├── shaders/           # Skia shader management
+└── textures/          # Texture loading and atlases
+```
 
-### TypeScript
-- Strict mode enabled
-- Comprehensive type definitions in `src/types/`
-- Proper typing for Redux state and actions
+## Testing Structure
+- **Unit tests**: Co-located with source files
+- **Integration tests**: In `__tests__/integration/`
+- **E2E tests**: In `__tests__/e2e/`
+- **Performance tests**: In `__tests__/performance/`
+- **Test utilities**: Shared setup and helpers

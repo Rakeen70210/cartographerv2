@@ -132,6 +132,13 @@ export interface CloudGeneratorConfig {
   windSpeed: number;
 }
 
+export interface WindConfig {
+  direction: number; // Wind direction in degrees (0-360, 0 = North)
+  speed: number; // Wind speed multiplier (0-2)
+  enabled: boolean; // Whether wind effects are enabled
+  turbulence: number; // Wind turbulence/variation (0-1)
+}
+
 export interface CloudSettings {
   density: number; // 0-1
   animationSpeed: number; // 0-2
@@ -139,6 +146,7 @@ export interface CloudSettings {
   colorScheme: 'day' | 'night' | 'custom';
   opacity: number; // 0-1
   contrast: number; // 0-2
+  wind: WindConfig; // Wind configuration
 }
 
 // Performance and device types

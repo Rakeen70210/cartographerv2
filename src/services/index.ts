@@ -10,9 +10,8 @@ export {
 } from './taskManager';
 export { BackgroundLocationService, backgroundLocationService } from './backgroundLocationService';
 export { FogService, getFogService } from './fogService';
-export { CloudAnimationService, getCloudAnimationService } from './cloudAnimationService';
-export { FogAnimationService, getFogAnimationService } from './fogAnimationService';
 export { FogLocationIntegrationService, fogLocationIntegrationService } from './fogLocationIntegrationService';
+export { FogDissipationService, fogDissipationService } from './fogDissipationService';
 export { StatisticsService, getStatisticsService } from './statisticsService';
 export { AchievementsService, getAchievementsService } from './achievementsService';
 export { BackupService, getBackupService } from './backupService';

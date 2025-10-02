@@ -13,6 +13,9 @@ export { CloudDissipationIntegration, CloudDissipationIntegrationUtils } from '.
 export { CloudFogIntegration, cloudFogIntegration } from './CloudFogIntegration';
 export { ExplorationStateSynchronizer, explorationStateSynchronizer } from './ExplorationStateSynchronizer';
 export { FogSystemCompatibility, fogSystemCompatibility } from './FogSystemCompatibility';
+export { ExplorationMaskManager } from './ExplorationMaskManager';
+export { BlurMaskManager, DEFAULT_BLUR_CONFIG } from './BlurMaskManager';
+export { FogMaskingSystem, DEFAULT_FOG_MASKING_CONFIG } from './FogMaskingSystem';
 
 export type {
   MapboxCloudLayerProps
@@ -63,3 +66,12 @@ export type {
   CompatibilityConfig,
   SystemStatus
 } from './FogSystemCompatibility';
+
+export type {
+  BlurMaskConfig
+} from './BlurMaskManager';
+
+export type {
+  FogMaskingConfig,
+  FogMaskingResult
+} from './FogMaskingSystem';

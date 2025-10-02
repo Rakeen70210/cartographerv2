@@ -4,3 +4,4 @@ export { useBackgroundLocation, useBackgroundLocationQueue } from './useBackgrou
 export { useCloudSettings } from './useCloudSettings';
 export { usePerformanceMode } from './usePerformanceMode';
 export { useVisualCustomization } from './useVisualCustomization';
+export { useFogDissipation, useFogDissipationService } from './useFogDissipation';
