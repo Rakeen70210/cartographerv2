@@ -14,11 +14,10 @@ export type { DriftConfig, DriftState } from './DriftAnimation';
 export { MorphingEffects, MorphingUtils } from './MorphingEffects';
 export type { MorphingConfig, MorphingState, MorphingData } from './MorphingEffects';
 
-export { DissipationAnimator, DissipationUtils } from './DissipationAnimator';
+export { DissipationAnimator, dissipationAnimator } from './DissipationAnimator';
 export type { 
-  DissipationConfig, 
-  DissipationPoint, 
-  RadialFalloff 
+  DissipationAnimationConfig, 
+  AnimatedDissipation
 } from './DissipationAnimator';
 
 export { ProgressiveRevelationAnimator, ProgressiveRevelationUtils } from './ProgressiveRevelationAnimator';

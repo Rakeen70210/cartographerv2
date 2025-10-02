@@ -20,6 +20,11 @@ interface FogSliceState {
       west: number;
     };
   }>;
+  // Wind configuration
+  windDirection: number; // 0-360 degrees
+  windSpeed: number; // 0-2 multiplier
+  windEnabled: boolean;
+  windTurbulence: number; // 0-1
   // Cloud system state
   cloudSystemEnabled: boolean;
   cloudSystemError: string | null;
@@ -36,6 +41,11 @@ const initialState: FogSliceState = {
   cloudDensity: 0.7,
   activeAnimations: [],
   clearingAreas: [],
+  // Wind configuration
+  windDirection: 45, // Northeast direction
+  windSpeed: 1.0,
+  windEnabled: true,
+  windTurbulence: 0.3,
   // Cloud system state
   cloudSystemEnabled: false,
   cloudSystemError: null,
@@ -135,6 +145,43 @@ const fogSlice = createSlice({
       }
     },
 
+    // Wind configuration actions
+    setWindDirection: (state, action: PayloadAction<number>) => {
+      state.windDirection = Math.max(0, Math.min(360, action.payload)) % 360;
+    },
+
+    setWindSpeed: (state, action: PayloadAction<number>) => {
+      state.windSpeed = Math.max(0, Math.min(2, action.payload));
+    },
+
+    setWindEnabled: (state, action: PayloadAction<boolean>) => {
+      state.windEnabled = action.payload;
+    },
+
+    setWindTurbulence: (state, action: PayloadAction<number>) => {
+      state.windTurbulence = Math.max(0, Math.min(1, action.payload));
+    },
+
+    updateWindSettings: (state, action: PayloadAction<{
+      direction?: number;
+      speed?: number;
+      enabled?: boolean;
+      turbulence?: number;
+    }>) => {
+      if (action.payload.direction !== undefined) {
+        state.windDirection = Math.max(0, Math.min(360, action.payload.direction)) % 360;
+      }
+      if (action.payload.speed !== undefined) {
+        state.windSpeed = Math.max(0, Math.min(2, action.payload.speed));
+      }
+      if (action.payload.enabled !== undefined) {
+        state.windEnabled = action.payload.enabled;
+      }
+      if (action.payload.turbulence !== undefined) {
+        state.windTurbulence = Math.max(0, Math.min(1, action.payload.turbulence));
+      }
+    },
+
     // Cloud system actions
     setCloudSystemEnabled: (state, action: PayloadAction<boolean>) => {
       state.cloudSystemEnabled = action.payload;
@@ -169,6 +216,53 @@ const fogSlice = createSlice({
         state.cloudSystemInitialized = action.payload.initialized;
       }
     },
+
+    // Enhanced dissipation animation actions
+    updateAnimationProgress: (state, action: PayloadAction<{
+      animationId: string;
+      progress: number;
+    }>) => {
+      // This can be used to track animation progress for UI feedback
+      const { animationId, progress } = action.payload;
+      // Store progress information if needed for UI
+    },
+
+    batchStartClearingAnimations: (state, action: PayloadAction<Array<{
+      animationId: string;
+      area: {
+        center: [number, number];
+        radius: number;
+        bounds: {
+          north: number;
+          south: number;
+          east: number;
+          west: number;
+        };
+      };
+    }>>) => {
+      state.animationInProgress = true;
+      state.lastClearingAnimation = Date.now();
+      
+      action.payload.forEach(({ animationId, area }) => {
+        state.activeAnimations.push(animationId);
+        state.clearingAreas.push(area);
+      });
+    },
+
+    batchCompleteClearingAnimations: (state, action: PayloadAction<string[]>) => {
+      const completedIds = action.payload;
+      
+      completedIds.forEach(animationId => {
+        state.activeAnimations = state.activeAnimations.filter(id => id !== animationId);
+      });
+      
+      // Update clearing areas - remove completed ones
+      // Note: This is a simplified approach. In practice, you might want more sophisticated tracking
+      if (state.activeAnimations.length === 0) {
+        state.animationInProgress = false;
+        state.clearingAreas = [];
+      }
+    },
   },
 });
 
@@ -184,10 +278,18 @@ export const {
   resetFogState,
   setCloudAnimationEnabled,
   updateCloudSettings,
+  setWindDirection,
+  setWindSpeed,
+  setWindEnabled,
+  setWindTurbulence,
+  updateWindSettings,
   setCloudSystemEnabled,
   setCloudSystemError,
   setCloudSystemInitialized,
   updateCloudState,
+  updateAnimationProgress,
+  batchStartClearingAnimations,
+  batchCompleteClearingAnimations,
 } = fogSlice.actions;
 
 // Convenience exports

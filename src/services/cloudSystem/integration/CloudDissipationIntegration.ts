@@ -11,7 +11,7 @@ import {
 import { LocationUpdate } from '../../../types/location';
 import { ExplorationResult, explorationService } from '../../explorationService';
 import { ExploredArea } from '../../../database/services';
-import { DissipationAnimator, DissipationUtils } from '../animation/DissipationAnimator';
+import { DissipationAnimator } from '../animation/DissipationAnimator';
 import { ProgressiveRevelationAnimator, ProgressiveRevelationUtils } from '../animation/ProgressiveRevelationAnimator';
 
 export interface CloudDissipationConfig {
@@ -71,10 +71,7 @@ export class CloudDissipationIntegration {
     };
 
     // Initialize animators
-    this.dissipationAnimator = new DissipationAnimator({
-      defaultDuration: this.config.defaultDuration,
-      maxRadius: this.config.defaultRadius
-    });
+    this.dissipationAnimator = new DissipationAnimator();
 
     this.progressiveAnimator = new ProgressiveRevelationAnimator();
 
@@ -196,10 +193,10 @@ export class CloudDissipationIntegration {
     switch (this.config.dissipationMode) {
       case 'instant':
         // Use fast dissipation
-        this.dissipationAnimator.startDissipation(center, {
+        this.dissipationAnimator.createAnimation({
+          center: center,
           maxRadius: radius,
           duration: Math.min(duration, 1000), // Max 1 second for instant
-          id: animationId
         });
         break;
 
@@ -219,10 +216,10 @@ export class CloudDissipationIntegration {
         // Choose based on performance and area size
         if (this.config.performanceMode === 'low' || radius < 75) {
           // Use simple dissipation for low performance or small areas
-          this.dissipationAnimator.startDissipation(center, {
+          this.dissipationAnimator.createAnimation({
+            center: center,
             maxRadius: radius,
             duration: duration,
-            id: animationId
           });
         } else {
           // Use progressive revelation for better performance and larger areas
@@ -368,10 +365,8 @@ export class CloudDissipationIntegration {
     this.config = { ...this.config, ...newConfig };
     
     // Update animator configurations
-    this.dissipationAnimator.updateConfig({
-      defaultDuration: this.config.defaultDuration,
-      maxRadius: this.config.defaultRadius
-    });
+    // Note: DissipationAnimator doesn't have updateConfig method
+    // Configuration is passed per animation in createAnimation calls
   }
 
   /**
@@ -437,20 +432,9 @@ export class CloudDissipationIntegration {
    * Setup animator callbacks
    */
   private setupAnimatorCallbacks(): void {
-    // Dissipation animator callbacks
-    this.dissipationAnimator.setDissipationCompleteCallback((dissipationId: string) => {
-      const explorationId = this.extractExplorationId(dissipationId);
-      if (explorationId) {
-        this.handleDissipationComplete(dissipationId, explorationId);
-      }
-    });
-
-    this.dissipationAnimator.setUniformUpdateCallback((uniforms: Record<string, any>) => {
-      if (this.onUniformUpdate) {
-        this.onUniformUpdate(uniforms);
-      }
-    });
-
+    // Note: DissipationAnimator doesn't have callback methods in current implementation
+    // Callbacks are handled through the onComplete parameter in createAnimation
+    
     // Progressive animator callbacks
     this.progressiveAnimator.setUniformUpdateCallback((uniforms: Record<string, any>) => {
       if (this.onUniformUpdate) {

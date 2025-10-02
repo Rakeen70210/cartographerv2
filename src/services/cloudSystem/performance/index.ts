@@ -34,3 +34,19 @@ export type {
 // Integrated performance optimizer
 export { PerformanceOptimizer } from './PerformanceOptimizer';
 export type { PerformanceOptimizerConfig, OptimizationResult } from './PerformanceOptimizer';
+
+// Skia-specific performance monitoring
+export { SkiaPerformanceMonitor } from './SkiaPerformanceMonitor';
+export type { 
+  SkiaPerformanceConfig, 
+  SkiaQualitySettings, 
+  SkiaPerformanceMetrics 
+} from './SkiaPerformanceMonitor';
+
+// Performance notification system
+export { PerformanceNotificationService } from './PerformanceNotificationService';
+export type {
+  PerformanceIssue,
+  NotificationConfig,
+  SuggestedSettings
+} from './PerformanceNotificationService';

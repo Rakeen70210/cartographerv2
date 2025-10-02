@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, Alert, Text } from 'react-native';
+import { View, StyleSheet, Alert, Text, Dimensions } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { MAPBOX_CONFIG, validateMapboxConfig } from '../config/mapbox';
 import { MapContainerProps, MapContainerState } from '../types/map';
@@ -14,7 +14,7 @@ import {
 } from '../store/slices/mapSlice';
 import { setFogGeometry, setFogVisible } from '../store/slices/fogSlice';
 import { saveViewport, loadViewport } from '../store/persistence';
-import FogOverlay from './FogOverlay';
+import { SkiaFogOverlay } from './SkiaFogOverlay';
 import { getFogService } from '../services/fogService';
 import { getDatabaseService } from '../database/services';
 import { cloudFogIntegration } from '../services/cloudSystem/integration';
@@ -22,6 +22,9 @@ import { fogSystemCompatibility } from '../services/cloudSystem/integration';
 
 // Set Mapbox access token from configuration
 Mapbox.setAccessToken(MAPBOX_CONFIG.ACCESS_TOKEN);
+
+// Get screen dimensions for Skia viewport
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const MapContainer: React.FC<MapContainerProps> = ({
   onLocationUpdate,
@@ -463,33 +466,25 @@ const MapContainer: React.FC<MapContainerProps> = ({
           onUpdate={handleUserLocationUpdate}
         />
 
-        {/* WORKING CLOUD FOG OVERLAY */}
+        {/* Skia-based Fog Overlay */}
         {isMapReady && fogVisible && (
-          <FogOverlay
+          <SkiaFogOverlay
             exploredAreas={exploredAreas}
-            animationSpeed={animationSpeed}
-            cloudDensity={cloudDensity}
-            visible={fogVisible}
             zoomLevel={viewport.zoom}
-            onFogCleared={(area) => {
-              console.log('🌫️ Fog cleared in area:', area);
+            viewport={{
+              width: screenWidth,
+              height: screenHeight,
+              bounds: {
+                north: viewport.center[1] + (0.01 * Math.pow(2, 15 - viewport.zoom)),
+                south: viewport.center[1] - (0.01 * Math.pow(2, 15 - viewport.zoom)),
+                east: viewport.center[0] + (0.01 * Math.pow(2, 15 - viewport.zoom)),
+                west: viewport.center[0] - (0.01 * Math.pow(2, 15 - viewport.zoom))
+              }
             }}
+            enablePerformanceMonitoring={true}
+            targetFPS={30}
           />
         )}
-
-        {/* Original Beautiful Cloud-Based Fog Overlay - commented out for testing */}
-        {/* {isMapReady && fogVisible && (
-          <FogOverlay
-            exploredAreas={exploredAreas}
-            animationSpeed={animationSpeed}
-            cloudDensity={cloudDensity}
-            visible={fogVisible}
-            zoomLevel={viewport.zoom}
-            onFogCleared={(area) => {
-              console.log('🌫️ Fog cleared in area:', area);
-            }}
-          />
-        )} */}
       </Mapbox.MapView>
     </View>
   );

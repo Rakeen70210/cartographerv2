@@ -2,7 +2,7 @@ import { store } from '../store';
 import { locationService } from './locationService';
 import { explorationService, ExplorationResult } from './explorationService';
 import { getFogService } from './fogService';
-import { getFogAnimationService } from './fogAnimationService';
+// Note: fogAnimationService removed - animations now handled by SkiaFogOverlay
 import { 
   updateLocation, 
   setLocationError 
@@ -29,7 +29,7 @@ export interface FogLocationConfig {
 export class FogLocationIntegrationService {
   private static instance: FogLocationIntegrationService;
   private fogService = getFogService();
-  private fogAnimationService = getFogAnimationService();
+  // Animation service removed - animations now handled by SkiaFogOverlay
   private config: FogLocationConfig;
   private lastProcessedLocation: LocationUpdate | null = null;
   private processingTimeout: NodeJS.Timeout | null = null;
@@ -63,8 +63,7 @@ export class FogLocationIntegrationService {
     // Listen to exploration events from exploration service
     explorationService.addExplorationListener(this.handleExplorationResult.bind(this));
 
-    // Set up fog animation completion callback
-    this.fogAnimationService.setAnimationUpdateCallback(this.handleAnimationUpdate.bind(this));
+    // Animation callbacks removed - animations now handled by SkiaFogOverlay
 
     console.log('Fog-Location integration initialized');
   }
@@ -150,7 +149,7 @@ export class FogLocationIntegrationService {
         accuracy: result.exploredArea.accuracy,
       }));
 
-      // Trigger fog clearing animation if enabled
+      // Trigger fog clearing animation if enabled (now handled by Redux state)
       if (this.config.animationEnabled && this.activeAnimationCount < this.config.maxConcurrentAnimations) {
         await this.triggerFogClearingAnimation(result);
       }
@@ -166,6 +165,7 @@ export class FogLocationIntegrationService {
 
   /**
    * Trigger fog clearing animation for newly explored area
+   * Note: Animation logic moved to SkiaFogOverlay, this now just updates Redux state
    */
   private async triggerFogClearingAnimation(result: ExplorationResult): Promise<void> {
     if (!result.exploredArea) return;
@@ -176,19 +176,11 @@ export class FogLocationIntegrationService {
       result.exploredArea.radius
     );
 
-    const animationId = this.fogAnimationService.startFogClearingAnimation(
-      area,
-      () => {
-        // Animation completed
-        this.activeAnimationCount--;
-        store.dispatch(completeFogClearingAnimation(animationId));
-        console.log('Fog clearing animation completed:', animationId);
-      }
-    );
-
+    const animationId = `anim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
     this.activeAnimationCount++;
 
-    // Update Redux state
+    // Update Redux state - SkiaFogOverlay will handle the actual animation
     store.dispatch(startFogClearingAnimation({
       animationId,
       area: {
@@ -197,6 +189,13 @@ export class FogLocationIntegrationService {
         bounds: area.bounds,
       },
     }));
+
+    // Simulate animation completion after a delay (SkiaFogOverlay will handle the real timing)
+    setTimeout(() => {
+      this.activeAnimationCount--;
+      store.dispatch(completeFogClearingAnimation(animationId));
+      console.log('Fog clearing animation completed:', animationId);
+    }, 2500); // Match SkiaFogOverlay animation duration
 
     console.log('Fog clearing animation started:', animationId);
   }
@@ -227,13 +226,11 @@ export class FogLocationIntegrationService {
   }
 
   /**
-   * Handle animation updates from fog animation service
+   * Handle animation updates (legacy method - animations now handled by SkiaFogOverlay)
    */
   private handleAnimationUpdate(animations: any[]): void {
-    // This can be used for performance monitoring or UI updates
-    if (animations.length !== this.activeAnimationCount) {
-      this.activeAnimationCount = animations.length;
-    }
+    // Legacy method - kept for compatibility but no longer used
+    // SkiaFogOverlay now handles all animation logic internally
   }
 
   /**
@@ -308,8 +305,7 @@ export class FogLocationIntegrationService {
         this.processingTimeout = null;
       }
 
-      // Cancel all active animations
-      this.fogAnimationService.cancelAllAnimations();
+      // Reset animation counter (actual animations handled by SkiaFogOverlay)
       this.activeAnimationCount = 0;
 
       // Stop exploration service

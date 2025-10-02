@@ -1,5 +1,6 @@
 import MapboxGL from '@rnmapbox/maps';
 import { getOfflineService } from './offlineService';
+import { getDatabaseService } from '../database/services';
 
 export interface OfflineRegion {
   id: string;
@@ -444,7 +445,7 @@ export class MapboxOfflineService {
   ): Promise<string | null> {
     try {
       // Get all explored areas from database
-      const databaseService = await import('../database/services').then(m => m.getDatabaseService());
+      const databaseService = getDatabaseService();
       const exploredAreas = await databaseService.getAllExploredAreas();
       
       if (exploredAreas.length === 0) {
