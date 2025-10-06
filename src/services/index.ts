@@ -21,6 +21,8 @@ export { DeviceCapabilityService, getDeviceCapabilityService } from './deviceCap
 export { PerformanceMonitorService, getPerformanceMonitorService } from './performanceMonitorService';
 export { MemoryManagementService, getMemoryManagementService } from './memoryManagementService';
 export { ErrorRecoveryService, getErrorRecoveryService } from './errorRecoveryService';
+export { compactionService } from './compactionService';
+export { spatialCacheService } from './spatialCacheService';
 
 // Initialize cross-service dependencies to avoid circular imports
 export const initializeServices = () => {

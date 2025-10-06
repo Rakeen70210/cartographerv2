@@ -97,7 +97,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     enablePerformanceMonitoring: true,
     autoRecovery: true,
     maxInitializationAttempts: 3,
-    shaderComplexity: enablePerformanceMonitoring ? 'adaptive' : 'standard'
+    shaderComplexity: 'simple' // Force simple shaders for Android emulator
   }));
   const [shaderInitialized, setShaderInitialized] = useState(false);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
@@ -441,7 +441,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
         ) : (
           // Ultimate fallback to basic fog fill when nothing else works
           <Fill 
-            color={`rgba(139, 157, 195, ${fogOpacity * cloudDensity})`}
+            color={`rgba(139, 157, 195, ${Math.min(fogOpacity * cloudDensity, 0.8)})`}
           />
         )}
         

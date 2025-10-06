@@ -90,6 +90,22 @@ export class DatabaseService {
     }
   }
 
+  async getAreasByIds(ids: number[]): Promise<ExploredArea[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    try {
+      const placeholders = ids.map(() => '?').join(',');
+      const query = `SELECT * FROM explored_areas WHERE id IN (${placeholders})`;
+      const result = await this.db.getAllAsync<ExploredArea>(query, ids);
+      return result;
+    } catch (error) {
+      console.error('Failed to get areas by IDs:', error);
+      throw new Error(`Failed to get areas by IDs: ${error}`);
+    }
+  }
+
   async getExploredAreasInBounds(
     northEast: { lat: number; lng: number },
     southWest: { lat: number; lng: number }
