@@ -2,12 +2,12 @@ import React, { useEffect, useRef } from 'react';
 import { 
   View, 
   StyleSheet, 
-  SafeAreaView, 
   Text, 
   TouchableOpacity, 
   ActivityIndicator,
   Alert 
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
 import { useAppDispatch, useAppSelector } from '../store/hooks';

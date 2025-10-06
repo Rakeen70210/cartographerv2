@@ -137,6 +137,11 @@ export class DatabaseInitializationService {
         // Create initial achievement records
         await this.initializeAchievements(result);
         
+        // Add test explored areas in development mode
+        if (__DEV__) {
+          await this.initializeTestExploredAreas(result);
+        }
+        
         // Mark first launch as complete
         await this.markFirstLaunchComplete();
       } else {
@@ -254,6 +259,58 @@ export class DatabaseInitializationService {
       const errorMessage = `Failed to initialize achievements: ${error}`;
       result.errors.push(errorMessage);
       throw new Error(errorMessage);
+    }
+  }
+
+  /**
+   * Create test explored areas for development (only in __DEV__ mode)
+   */
+  private async initializeTestExploredAreas(result: InitializationResult): Promise<void> {
+    try {
+      const databaseService = getDatabaseService();
+      
+      // Create test explored areas around common locations
+      const testAreas = [
+        {
+          latitude: 37.7749,  // San Francisco
+          longitude: -122.4194,
+          radius: 100,
+          explored_at: new Date('2024-01-01').toISOString(),
+          accuracy: 10
+        },
+        {
+          latitude: 37.7849,  // Near San Francisco
+          longitude: -122.4094,
+          radius: 150,
+          explored_at: new Date('2024-01-15').toISOString(),
+          accuracy: 15
+        },
+        {
+          latitude: 37.7649,  // Near San Francisco
+          longitude: -122.4294,
+          radius: 120,
+          explored_at: new Date('2024-02-01').toISOString(),
+          accuracy: 12
+        },
+        {
+          latitude: 37.4219,  // Mountain View (Google HQ area)
+          longitude: -122.084,
+          radius: 200,
+          explored_at: new Date('2024-02-15').toISOString(),
+          accuracy: 8
+        }
+      ];
+
+      for (const area of testAreas) {
+        await databaseService.createExploredArea(area);
+      }
+
+      console.log(`Created ${testAreas.length} test explored areas for development`);
+    } catch (error) {
+      const errorMessage = `Failed to create test explored areas: ${error}`;
+      result.errors.push(errorMessage);
+      console.warn(errorMessage);
+      // Don't throw error for test data - it's not critical
     }
   }
 

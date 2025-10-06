@@ -94,10 +94,10 @@ float calculateCloudDensity(vec2 uv, float time) {
   float baseLayer = fbm(cloudCoord * u_zoom * 0.5, octaves, 0.5, 2.0);
   
   // Detail layer with smaller-scale variations
-  float detailLayer = fbm(cloudCoord * u_zoom * 2.0, max(2, octaves - 2), 0.4, 2.1);
+  float detailLayer = fbm(cloudCoord * u_zoom * 2.0, int(max(2.0, float(octaves - 2))), 0.4, 2.1);
   
   // Turbulence layer for natural irregularity
-  float turbulence = fbm(cloudCoord * u_zoom * 4.0 + time * 0.01, max(1, octaves - 4), 0.3, 2.2);
+  float turbulence = fbm(cloudCoord * u_zoom * 4.0 + time * 0.01, int(max(1.0, float(octaves - 4))), 0.3, 2.2);
   
   // Combine layers with different weights
   float density = baseLayer * 0.6 + detailLayer * 0.3 + turbulence * 0.1;
