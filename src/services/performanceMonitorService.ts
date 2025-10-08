@@ -139,9 +139,7 @@ class PerformanceMonitorService {
       this.performMemoryCleanup();
     }, this.memoryManagementConfig.cleanupInterval);
 
-    console.log('Performance monitoring started (DISABLED FOR DEBUGGING)');
-    // TEMPORARILY DISABLE PERFORMANCE MONITORING FOR DEBUGGING
-    return;
+    console.log('Performance monitoring started');
   }
 
   /**

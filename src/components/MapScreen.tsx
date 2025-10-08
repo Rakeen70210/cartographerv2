@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Alert 
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -102,7 +101,7 @@ const MapScreen: React.FC<MapScreenProps> = () => {
   // Show error state if map failed to load
   if (mapStatus.hasError) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Map Error</Text>
           <Text style={styles.errorMessage}>{mapStatus.error}</Text>
@@ -110,12 +109,12 @@ const MapScreen: React.FC<MapScreenProps> = () => {
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.mapWrapper}>
         <MapContainer
           onLocationUpdate={handleLocationUpdate}
@@ -180,7 +179,7 @@ const MapScreen: React.FC<MapScreenProps> = () => {
           )}
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
