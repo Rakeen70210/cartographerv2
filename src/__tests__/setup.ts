@@ -5,6 +5,18 @@
 
 import '@testing-library/jest-native/extend-expect';
 
+if (typeof (global as any).TransformStream === 'undefined') {
+  (global as any).TransformStream = class {};
+}
+
+if (typeof (global as any).TextEncoderStream === 'undefined') {
+  (global as any).TextEncoderStream = class {};
+}
+
+if (typeof (global as any).TextDecoderStream === 'undefined') {
+  (global as any).TextDecoderStream = class {};
+}
+
 // Mock Expo modules
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({
