@@ -8,6 +8,7 @@ import { useAppSelector } from '../store/hooks';
 import { SkiaShaderSystem } from '../services/cloudSystem/shaders/SkiaShaderSystem';
 import { SkiaCloudUniforms } from '../services/cloudSystem/shaders/SkiaCloudShader';
 import { FogMaskingSystem, DEFAULT_FOG_MASKING_CONFIG } from '../services/cloudSystem/integration/FogMaskingSystem';
+import { getFogMaskUniformService, FogMaskMode } from '../services/cloudSystem/FogMaskUniformService';
 import { fogDissipationService } from '../services/fogDissipationService';
 import { useSkiaPerformanceMonitoring } from '../hooks/useSkiaPerformanceMonitoring';
 import { SkiaPerformanceMetrics, SkiaQualitySettings } from '../services/cloudSystem/performance/SkiaPerformanceMonitor';
@@ -92,6 +93,8 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
   }));
   const [windOffset, setWindOffset] = useState<[number, number]>([0, 0]);
 
+  const fogMaskService = useMemo(() => getFogMaskUniformService(), []);
+
   // Shader system state with performance-aware configuration
   const [shaderSystem] = useState(() => new SkiaShaderSystem({
     enablePerformanceMonitoring: true,
@@ -101,6 +104,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
   }));
   const [shaderInitialized, setShaderInitialized] = useState(false);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
+  const [maskMode, setMaskMode] = useState<FogMaskMode>('cpu_fallback');
   const lastUpdateTime = useRef(0);
   const lastQualityLogTimeRef = useRef(0);
   const lastPerformanceLogTimeRef = useRef(0);
@@ -330,10 +334,30 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
   // Get active dissipation animations from the service
   const dissipationAnimations = useMemo<DissipationAnimation[]>(() => {
     const activeAnimations = fogDissipationService.getActiveAnimations();
+    const resolveRadius = (radiusValue: unknown): number => {
+      if (typeof radiusValue === 'number') {
+        return radiusValue;
+      }
+      if (radiusValue && typeof (radiusValue as { __getValue?: () => number }).__getValue === 'function') {
+        try {
+          return (radiusValue as { __getValue: () => number }).__getValue();
+        } catch (error) {
+          return 0;
+        }
+      }
+      if (radiusValue && typeof (radiusValue as { value?: number }).value === 'number') {
+        return (radiusValue as { value: number }).value;
+      }
+      if (radiusValue && typeof (radiusValue as { _value?: number })._value === 'number') {
+        return (radiusValue as { _value: number })._value;
+      }
+      return 0;
+    };
+
     return activeAnimations.map(anim => ({
       id: anim.id,
       center: anim.center,
-      radius: anim.radius,
+      radius: resolveRadius(anim.radius),
       startTime: anim.startTime,
       duration: anim.duration
     }));
@@ -384,10 +408,56 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     }
   }, [exploredAreas]);
 
-  // Generate fog masking for current frame
+  const fogMaskBuildResult = useMemo(() => {
+    try {
+      return fogMaskService.buildFogMaskUniforms({
+        exploredAreas: normalizedExploredAreas,
+        dissipationAnimations,
+        viewport,
+        zoom: zoomLevel,
+      });
+    } catch (error) {
+      console.warn('🌫️ Error building fog mask uniforms:', error);
+      return null;
+    }
+  }, [fogMaskService, normalizedExploredAreas, dissipationAnimations, viewport, zoomLevel]);
+
+  useEffect(() => {
+    if (!fogMaskBuildResult) {
+      setMaskMode('cpu_fallback');
+      if (shaderInitialized) {
+        shaderSystem.updateUniforms({
+          u_maskMode: 2,
+          u_circleCount: 0,
+          u_circleData: null,
+          u_circleUniforms: new Float32Array(0),
+        }, 'high');
+      }
+      return;
+    }
+
+    setMaskMode(fogMaskBuildResult.mode);
+
+    if (!shaderInitialized) {
+      return;
+    }
+
+    const update = shaderSystem.updateUniforms(fogMaskBuildResult.uniforms, 'high');
+    if (!update.success && fogMaskBuildResult.mode !== 'cpu_fallback') {
+      console.warn('🌫️ Failed to update fog mask uniforms:', update.error);
+    }
+  }, [fogMaskBuildResult, shaderInitialized, shaderSystem]);
+
+  // Get active shader, texture, and uniforms for rendering
+  const activeShader = shaderInitialized ? shaderSystem.getActiveShader() : null;
+  const shouldUseCpuMask = !shaderInitialized || !activeShader || maskMode === 'cpu_fallback' || isUsingFallback;
+  const uniformsForSkia = shaderInitialized ? shaderSystem.getUniformsForSkia() : {};
+
   const fogMasking = useMemo(() => {
-    if (!shaderInitialized) return null;
-    
+    if (!shouldUseCpuMask) {
+      return null;
+    }
+
     try {
       return maskingSystem.generateFogMask(
         normalizedExploredAreas,
@@ -399,7 +469,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
       console.warn('🌫️ Error generating fog mask:', error);
       return null;
     }
-  }, [normalizedExploredAreas, dissipationAnimations, viewport, zoomLevel, shaderInitialized, maskingSystem]);
+  }, [shouldUseCpuMask, maskingSystem, normalizedExploredAreas, dissipationAnimations, viewport, zoomLevel]);
 
   // Performance logging in development
   if (__DEV__ && enablePerformanceMonitoring) {
@@ -411,6 +481,9 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
       zoomLevel,
       shaderInitialized,
       isUsingFallback,
+      maskMode,
+      gpuMaskDiagnostics: fogMaskBuildResult?.diagnostics,
+      shouldUseCpuMask,
       hasFogMasking: fogMasking !== null,
       viewport: { width: viewport.width, height: viewport.height },
       performance: {
@@ -422,10 +495,6 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
       }
     });
   }
-
-  // Get active shader, texture, and uniforms for rendering
-  const activeShader = shaderInitialized ? shaderSystem.getActiveShader() : null;
-  const uniformsForSkia = shaderInitialized ? shaderSystem.getUniformsForSkia() : {};
 
   return (
     <Canvas style={styles.canvas}>

@@ -1,3 +1,5 @@
+import { SkShader } from '@shopify/react-native-skia';
+
 /**
  * Skia Cloud Shader
  * GLSL fragment shader implementation for React Native Skia with multi-octave noise (FBM)
@@ -11,7 +13,18 @@ export interface SkiaCloudUniforms {
   u_wind_offset: [number, number];
   u_cloud_density: number;
   u_animation_speed: number;
+  u_circleCount: number;
+  u_texWidth: number;
+  u_featherPx: number;
+  u_unpackScale: [number, number, number];
+  u_maskMode: number;
+  u_circleData: SkShader | null;
+  u_circleUniforms: Float32Array;
 }
+
+const MAX_GPU_CIRCLE_COUNT = 4096;
+const MAX_TEXTURE_WIDTH = 512;
+const DEFAULT_FEATHER_PX = 6;
 
 /**
  * GLSL Fragment Shader Source for Skia Cloud Rendering
@@ -24,6 +37,15 @@ uniform float u_zoom;
 uniform vec2 u_wind_offset;
 uniform float u_cloud_density;
 uniform float u_animation_speed;
+uniform shader u_circleData;
+uniform int u_circleCount;
+uniform int u_texWidth;
+uniform float u_featherPx;
+uniform float3 u_unpackScale;
+uniform int u_maskMode;
+uniform float4 u_circleUniforms[128];
+const int MAX_TEXTURE_CIRCLES = 4096;
+const int MAX_UNIFORM_CIRCLES = 128;
 
 // Hash function for noise generation
 float hash(vec2 p) {
@@ -148,6 +170,105 @@ float calculateAlpha(float density) {
   return alpha * 0.8; // Overall opacity control
 }
 
+float computeCircleContribution(vec2 fragCoord, float circleX, float circleY, float radiusPx, float circleType) {
+  if (radiusPx <= 0.0) {
+    return 0.0;
+  }
+
+  vec2 delta = fragCoord - vec2(circleX, circleY);
+  float dist2 = dot(delta, delta);
+  float outerRadius = radiusPx;
+  float innerRadius = max(outerRadius - u_featherPx, 0.0);
+  float outer2 = outerRadius * outerRadius;
+  float inner2 = innerRadius * innerRadius;
+
+  if (dist2 >= outer2) {
+    return 0.0;
+  }
+
+  if (outer2 <= inner2) {
+    return 1.0;
+  }
+
+  float factor = clamp((outer2 - dist2) / (outer2 - inner2), 0.0, 1.0);
+  float smooth = smoothstep(0.0, 1.0, factor);
+
+  if (circleType > 0.5) {
+    smooth = pow(smooth, 0.85);
+  }
+
+  return smooth;
+}
+
+float sampleTextureMask(vec2 fragCoord) {
+  if (u_circleCount <= 0) {
+    return 0.0;
+  }
+
+  int texWidth = max(u_texWidth, 1);
+  int texHeight = (u_circleCount + texWidth - 1) / texWidth;
+  float clearFactor = 0.0;
+
+  for (int i = 0; i < MAX_TEXTURE_CIRCLES; ++i) {
+    if (i >= u_circleCount) {
+      break;
+    }
+
+    int xIndex = i - (i / texWidth) * texWidth;
+    int yIndex = i / texWidth;
+    float2 uv = float2((float(xIndex) + 0.5) / float(texWidth), (float(yIndex) + 0.5) / float(texHeight));
+    float4 packed = u_circleData.eval(uv);
+
+    float circleX = packed.r * u_unpackScale.x;
+    float circleY = packed.g * u_unpackScale.y;
+    float radiusPx = packed.b * u_unpackScale.z;
+    float circleType = packed.a;
+
+    clearFactor = max(clearFactor, computeCircleContribution(fragCoord, circleX, circleY, radiusPx, circleType));
+
+    if (clearFactor >= 0.999) {
+      break;
+    }
+  }
+
+  return clearFactor;
+}
+
+float sampleUniformMask(vec2 fragCoord) {
+  if (u_circleCount <= 0) {
+    return 0.0;
+  }
+
+  float clearFactor = 0.0;
+
+  for (int i = 0; i < MAX_UNIFORM_CIRCLES; ++i) {
+    if (i >= u_circleCount) {
+      break;
+    }
+
+    float4 circle = u_circleUniforms[i];
+    clearFactor = max(clearFactor, computeCircleContribution(fragCoord, circle.x, circle.y, circle.z, circle.w));
+
+    if (clearFactor >= 0.999) {
+      break;
+    }
+  }
+
+  return clearFactor;
+}
+
+float sampleFogMask(vec2 fragCoord) {
+  if (u_maskMode == 0) {
+    return sampleTextureMask(fragCoord);
+  }
+
+  if (u_maskMode == 1) {
+    return sampleUniformMask(fragCoord);
+  }
+
+  return 0.0;
+}
+
 vec4 main(vec2 fragCoord) {
   // Normalize coordinates
   vec2 uv = fragCoord / u_resolution;
@@ -163,6 +284,12 @@ vec4 main(vec2 fragCoord) {
   // Calculate cloud color and alpha
   vec3 cloudColor = calculateCloudColor(density, uv);
   float alpha = calculateAlpha(density);
+
+  if (u_maskMode != 2 && u_circleCount > 0) {
+    float clearFactor = clamp(sampleFogMask(fragCoord), 0.0, 1.0);
+    alpha *= (1.0 - clearFactor);
+    cloudColor = mix(cloudColor, vec3(0.92, 0.95, 0.98), clearFactor * 0.15);
+  }
   
   return vec4(cloudColor, alpha);
 }
@@ -178,12 +305,30 @@ export const defaultSkiaCloudUniforms: SkiaCloudUniforms = {
   u_wind_offset: [0.0, 0.0],
   u_cloud_density: 0.7,
   u_animation_speed: 1.0,
+  u_circleCount: 0,
+  u_texWidth: 1,
+  u_featherPx: DEFAULT_FEATHER_PX,
+  u_unpackScale: [1, 1, 1],
+  u_maskMode: 2,
+  u_circleData: null,
+  u_circleUniforms: new Float32Array(0),
 };
 
 /**
  * Uniform validation and bounds checking for performance safety
  */
 export function validateSkiaCloudUniforms(uniforms: Partial<SkiaCloudUniforms>): SkiaCloudUniforms {
+  const circleCount = Math.max(0, Math.min(MAX_GPU_CIRCLE_COUNT, uniforms.u_circleCount ?? defaultSkiaCloudUniforms.u_circleCount));
+  const texWidth = Math.max(1, Math.min(MAX_TEXTURE_WIDTH, uniforms.u_texWidth ?? defaultSkiaCloudUniforms.u_texWidth));
+  const featherPx = Math.max(0, uniforms.u_featherPx ?? defaultSkiaCloudUniforms.u_featherPx);
+  const maskMode = Math.max(0, Math.min(2, uniforms.u_maskMode ?? defaultSkiaCloudUniforms.u_maskMode));
+  const unpackScale = uniforms.u_unpackScale ?? defaultSkiaCloudUniforms.u_unpackScale;
+  const circleData = uniforms.u_circleData ?? defaultSkiaCloudUniforms.u_circleData;
+  const circleUniformsSource = uniforms.u_circleUniforms ?? defaultSkiaCloudUniforms.u_circleUniforms;
+  const circleUniforms = circleUniformsSource instanceof Float32Array
+    ? circleUniformsSource
+    : new Float32Array(circleUniformsSource);
+
   return {
     u_time: Math.max(0, uniforms.u_time ?? defaultSkiaCloudUniforms.u_time),
     u_resolution: uniforms.u_resolution ?? defaultSkiaCloudUniforms.u_resolution,
@@ -191,6 +336,13 @@ export function validateSkiaCloudUniforms(uniforms: Partial<SkiaCloudUniforms>):
     u_wind_offset: uniforms.u_wind_offset ?? defaultSkiaCloudUniforms.u_wind_offset,
     u_cloud_density: Math.max(0, Math.min(1, uniforms.u_cloud_density ?? defaultSkiaCloudUniforms.u_cloud_density)),
     u_animation_speed: Math.max(0, Math.min(3, uniforms.u_animation_speed ?? defaultSkiaCloudUniforms.u_animation_speed)),
+    u_circleCount: circleCount,
+    u_texWidth: texWidth,
+    u_featherPx: featherPx,
+    u_unpackScale: unpackScale,
+    u_maskMode: maskMode,
+    u_circleData: circleData,
+    u_circleUniforms: circleUniforms,
   };
 }
 

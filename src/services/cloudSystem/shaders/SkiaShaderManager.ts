@@ -523,15 +523,30 @@ export class SkiaShaderManager {
   /**
    * Create shader uniforms object for Skia Fill component
    */
-  createUniformsForSkia(): Record<string, number | number[]> {
-    return {
+  createUniformsForSkia(): Record<string, any> {
+    const uniforms: Record<string, any> = {
       u_time: this.currentUniforms.u_time,
       u_resolution: this.currentUniforms.u_resolution,
       u_zoom: this.currentUniforms.u_zoom,
       u_wind_offset: this.currentUniforms.u_wind_offset,
       u_cloud_density: this.currentUniforms.u_cloud_density,
       u_animation_speed: this.currentUniforms.u_animation_speed,
+      u_circleCount: this.currentUniforms.u_circleCount,
+      u_texWidth: this.currentUniforms.u_texWidth,
+      u_featherPx: this.currentUniforms.u_featherPx,
+      u_unpackScale: this.currentUniforms.u_unpackScale,
+      u_maskMode: this.currentUniforms.u_maskMode,
     };
+
+    if (this.currentUniforms.u_circleData) {
+      uniforms.u_circleData = this.currentUniforms.u_circleData;
+    }
+
+    if (this.currentUniforms.u_circleUniforms?.length) {
+      uniforms.u_circleUniforms = this.currentUniforms.u_circleUniforms;
+    }
+
+    return uniforms;
   }
 
   /**
