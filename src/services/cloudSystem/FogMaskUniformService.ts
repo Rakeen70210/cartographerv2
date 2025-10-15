@@ -2,7 +2,12 @@ import { Skia, TileMode, BlendMode } from '@shopify/react-native-skia';
 import type { SkImage, SkShader } from '@shopify/react-native-skia';
 import { GenericExploredArea } from '../../types/fog';
 import { DissipationAnimation, SkiaFogViewport } from '../../types/skiaFog';
-import { SkiaCloudUniforms } from './shaders/SkiaCloudShader';
+import {
+  SkiaCloudUniforms,
+  GPU_MASK_MAX_CIRCLES,
+  UNIFORM_MASK_MAX_CIRCLES,
+  UNIFORM_MASK_FLOAT_COUNT,
+} from './shaders/SkiaCloudShader';
 
 export type FogMaskMode = 'texture' | 'uniform_array' | 'cpu_fallback';
 
@@ -47,13 +52,13 @@ interface TextureBuildResult {
   texHeight: number;
 }
 
-const GPU_CIRCLE_BUDGET = 4096;
-const UNIFORM_ARRAY_CAPACITY = 128;
+const GPU_CIRCLE_BUDGET = GPU_MASK_MAX_CIRCLES;
+const UNIFORM_ARRAY_CAPACITY = UNIFORM_MASK_MAX_CIRCLES;
 const DEFAULT_VIEWPORT_PADDING = 96;
 const CACHE_DURATION_MS = 30;
 const MAX_TEXTURE_WIDTH = 512;
 const MIN_TEXTURE_WIDTH = 32;
-const EMPTY_UNIFORM_BUFFER = new Float32Array(UNIFORM_ARRAY_CAPACITY * 4);
+const EMPTY_UNIFORM_BUFFER = new Float32Array(UNIFORM_MASK_FLOAT_COUNT);
 
 export class FogMaskUniformService {
   private readonly skia: typeof Skia | undefined;

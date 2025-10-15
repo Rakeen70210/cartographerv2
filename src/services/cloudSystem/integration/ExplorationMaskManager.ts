@@ -9,6 +9,11 @@ export class ExplorationMaskManager {
   private cachedPath: SkPath | null = null;
   private lastAreasHash: string = '';
   private lastViewportHash: string = '';
+  private readonly pathOpUnion: number | string | undefined = (() => {
+    const unionCandidate = Skia.PathOp?.Union;
+    const unionType = typeof unionCandidate;
+    return unionType === 'number' || unionType === 'string' ? unionCandidate : undefined;
+  })();
 
   /**
    * Convert explored areas to a unified Skia Path with memoization
@@ -57,9 +62,14 @@ export class ExplorationMaskManager {
       if (screenCoords) {
         const circlePath = Skia.Path.Make();
         circlePath.addCircle(screenCoords.x, screenCoords.y, screenCoords.radius);
-        
-        // Union with main path for efficient combining
-        path.op(circlePath, Skia.PathOp.Union);
+
+        if (this.pathOpUnion !== undefined && typeof path.op === 'function') {
+          path.op(circlePath, this.pathOpUnion);
+        } else if (typeof path.addPath === 'function') {
+          path.addPath(circlePath);
+        } else {
+          path.addCircle(screenCoords.x, screenCoords.y, screenCoords.radius);
+        }
       }
     }
 

@@ -4,7 +4,7 @@
  */
 
 import { Skia, RuntimeEffect, SkRuntimeEffect, Image } from '@shopify/react-native-skia';
-import { SkiaCloudFragmentShader, SkiaCloudUniforms, validateSkiaCloudUniforms, defaultSkiaCloudUniforms } from './SkiaCloudShader';
+import { SkiaCloudFragmentShader, SkiaCloudUniforms, validateSkiaCloudUniforms, defaultSkiaCloudUniforms, UNIFORM_MASK_FLOAT_COUNT } from './SkiaCloudShader';
 import { FallbackTextureGenerator, FallbackTextureConfig } from './FallbackTextureGenerator';
 
 export interface ShaderCompilationResult {
@@ -313,6 +313,18 @@ export class SkiaShaderManager {
       // Store the updated uniforms
       this.currentUniforms = validatedUniforms;
 
+      if (__DEV__) {
+        const circleUniformLength = this.currentUniforms.u_circleUniforms?.length ?? 0;
+        if (circleUniformLength !== UNIFORM_MASK_FLOAT_COUNT) {
+          console.warn('🌫️ Shader manager stored unexpected circle uniform length', {
+            circleUniformLength,
+            expectedLength: UNIFORM_MASK_FLOAT_COUNT,
+            maskMode: this.currentUniforms.u_maskMode,
+            circleCount: this.currentUniforms.u_circleCount,
+          });
+        }
+      }
+
       // Update fallback texture if in texture mode and time has changed
       if (this.isUsingTextureMode && uniforms.u_time !== undefined) {
         this.updateFallbackTexture();
@@ -543,7 +555,14 @@ export class SkiaShaderManager {
     }
 
     if (this.currentUniforms.u_circleUniforms?.length) {
-      uniforms.u_circleUniforms = this.currentUniforms.u_circleUniforms;
+      const circleUniforms = this.currentUniforms.u_circleUniforms;
+      if (__DEV__ && circleUniforms.length !== UNIFORM_MASK_FLOAT_COUNT) {
+        console.warn('🌫️ Preparing circle uniforms with unexpected length for Skia', {
+          circleUniformLength: circleUniforms.length,
+          expectedLength: UNIFORM_MASK_FLOAT_COUNT,
+        });
+      }
+      uniforms.u_circleUniforms = Array.from(circleUniforms);
     }
 
     return uniforms;

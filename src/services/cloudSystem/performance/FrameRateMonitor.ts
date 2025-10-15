@@ -23,6 +23,7 @@ export class FrameRateMonitor {
   private fpsHistory: number[] = [];
   private droppedFrames = 0;
   private animationFrameId: number | null = null;
+  private fallbackTimerId: NodeJS.Timeout | null = null;
   
   // Configuration
   private readonly maxHistorySize = 60; // Keep 60 frames of history
@@ -51,8 +52,15 @@ export class FrameRateMonitor {
     this.isRunning = false;
     
     if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
+      if (typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(this.animationFrameId);
+      }
       this.animationFrameId = null;
+    }
+
+    if (this.fallbackTimerId !== null) {
+      clearTimeout(this.fallbackTimerId);
+      this.fallbackTimerId = null;
     }
   }
 
@@ -177,8 +185,9 @@ export class FrameRateMonitor {
    */
   public reset(): void {
     this.frameCount = 0;
-    this.lastFrameTime = performance.now();
-    this.startTime = this.lastFrameTime;
+    const timestamp = this.getTimestamp();
+    this.lastFrameTime = timestamp;
+    this.startTime = timestamp;
     this.frameTimes = [];
     this.fpsHistory = [];
     this.droppedFrames = 0;
@@ -190,10 +199,20 @@ export class FrameRateMonitor {
   private scheduleNextFrame(): void {
     if (!this.isRunning) return;
 
-    this.animationFrameId = requestAnimationFrame((currentTime) => {
-      this.recordFrame(currentTime);
-      this.scheduleNextFrame();
-    });
+    if (typeof requestAnimationFrame === 'function') {
+      this.animationFrameId = requestAnimationFrame((currentTime) => {
+        this.recordFrame(this.getTimestamp(currentTime));
+        this.scheduleNextFrame();
+      });
+    } else {
+      this.fallbackTimerId = setTimeout(() => {
+        if (!this.isRunning) {
+          return;
+        }
+        this.recordFrame(this.getTimestamp());
+        this.scheduleNextFrame();
+      }, 16);
+    }
   }
 
   /**
@@ -202,6 +221,9 @@ export class FrameRateMonitor {
   private recordFrame(currentTime: number): void {
     const frameTime = currentTime - this.lastFrameTime;
     this.lastFrameTime = currentTime;
+    if (!Number.isFinite(frameTime) || frameTime <= 0) {
+      return;
+    }
     this.frameCount++;
 
     // Record frame time
@@ -275,5 +297,20 @@ export class FrameRateMonitor {
       stable: this.isPerformanceStable(),
       category: this.getFrameRateCategory()
     };
+  }
+
+  /**
+   * Normalize timestamps across environments where requestAnimationFrame behaves differently
+   */
+  private getTimestamp(time?: number): number {
+    if (typeof time === 'number' && Number.isFinite(time)) {
+      return time;
+    }
+
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+      return performance.now();
+    }
+
+    return Date.now();
   }
 }

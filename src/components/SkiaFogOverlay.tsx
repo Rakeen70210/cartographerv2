@@ -6,7 +6,7 @@ import { GenericExploredArea } from '../types/fog';
 import { WindConfig } from '../types/cloud';
 import { useAppSelector } from '../store/hooks';
 import { SkiaShaderSystem } from '../services/cloudSystem/shaders/SkiaShaderSystem';
-import { SkiaCloudUniforms } from '../services/cloudSystem/shaders/SkiaCloudShader';
+import { SkiaCloudUniforms, UNIFORM_MASK_FLOAT_COUNT } from '../services/cloudSystem/shaders/SkiaCloudShader';
 import { FogMaskingSystem, DEFAULT_FOG_MASKING_CONFIG } from '../services/cloudSystem/integration/FogMaskingSystem';
 import { getFogMaskUniformService, FogMaskMode } from '../services/cloudSystem/FogMaskUniformService';
 import { fogDissipationService } from '../services/fogDissipationService';
@@ -141,6 +141,10 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
   }, [shaderSystem, shouldLogWithThrottle]);
 
   const handlePerformanceIssue = useCallback((performanceMetrics: SkiaPerformanceMetrics) => {
+    if (performanceMetrics.totalFrames < 30) {
+      return;
+    }
+
     const severity = performanceMetrics.currentFPS < 15 ? 'critical'
       : performanceMetrics.currentFPS < 20 ? 'high'
       : performanceMetrics.currentFPS < 25 ? 'medium'
@@ -430,7 +434,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
           u_maskMode: 2,
           u_circleCount: 0,
           u_circleData: null,
-          u_circleUniforms: new Float32Array(0),
+          u_circleUniforms: new Float32Array(UNIFORM_MASK_FLOAT_COUNT),
         }, 'high');
       }
       return;

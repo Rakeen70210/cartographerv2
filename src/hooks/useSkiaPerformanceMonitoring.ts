@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { SkiaPerformanceMonitor, SkiaQualitySettings, SkiaPerformanceMetrics } from '../services/cloudSystem/performance/SkiaPerformanceMonitor';
+import { getPerformanceMonitorService } from '../services/performanceMonitorService';
 
 export interface UseSkiaPerformanceMonitoringOptions {
   enabled?: boolean;
@@ -60,6 +61,7 @@ export const useSkiaPerformanceMonitoring = (
   const monitorRef = useRef<SkiaPerformanceMonitor | null>(null);
   const metricsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const performanceMonitorServiceRef = useRef(getPerformanceMonitorService());
 
   // Initialize performance monitor
   useEffect(() => {
@@ -135,6 +137,11 @@ export const useSkiaPerformanceMonitoring = (
       const isAcceptable = monitor.isPerformanceAcceptable();
       const debugInfo = monitor.getDebugInfo();
 
+       const frameTime = metrics.frameTime > 0 ? metrics.frameTime : metrics.averageFrameTime;
+       if (metrics.currentFPS > 0 && frameTime > 0) {
+         performanceMonitorServiceRef.current.ingestFrameMetrics(metrics.currentFPS, frameTime);
+       }
+
       setState(prev => ({
         ...prev,
         metrics,
@@ -143,7 +150,7 @@ export const useSkiaPerformanceMonitoring = (
       }));
 
       // Notify about performance issues
-      if (!isAcceptable && onPerformanceIssue) {
+      if (!isAcceptable && onPerformanceIssue && metrics.totalFrames >= 30) {
         onPerformanceIssue(metrics);
       }
     };

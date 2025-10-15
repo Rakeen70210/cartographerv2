@@ -6,6 +6,10 @@ import { SkShader } from '@shopify/react-native-skia';
  * Optimized for mobile GPU performance with zoom-based level-of-detail
  */
 
+export const GPU_MASK_MAX_CIRCLES = 4096;
+export const UNIFORM_MASK_MAX_CIRCLES = 128;
+export const UNIFORM_MASK_FLOAT_COUNT = UNIFORM_MASK_MAX_CIRCLES * 4;
+
 export interface SkiaCloudUniforms {
   u_time: number;
   u_resolution: [number, number];
@@ -22,7 +26,7 @@ export interface SkiaCloudUniforms {
   u_circleUniforms: Float32Array;
 }
 
-const MAX_GPU_CIRCLE_COUNT = 4096;
+const MAX_GPU_CIRCLE_COUNT = GPU_MASK_MAX_CIRCLES;
 const MAX_TEXTURE_WIDTH = 512;
 const DEFAULT_FEATHER_PX = 6;
 
@@ -41,11 +45,11 @@ uniform shader u_circleData;
 uniform int u_circleCount;
 uniform int u_texWidth;
 uniform float u_featherPx;
-uniform float3 u_unpackScale;
+uniform vec3 u_unpackScale;
 uniform int u_maskMode;
-uniform float4 u_circleUniforms[128];
-const int MAX_TEXTURE_CIRCLES = 4096;
-const int MAX_UNIFORM_CIRCLES = 128;
+uniform vec4 u_circleUniforms[${UNIFORM_MASK_MAX_CIRCLES}];
+const int MAX_TEXTURE_CIRCLES = ${GPU_MASK_MAX_CIRCLES};
+const int MAX_UNIFORM_CIRCLES = ${UNIFORM_MASK_MAX_CIRCLES};
 
 // Hash function for noise generation
 float hash(vec2 p) {
@@ -205,7 +209,7 @@ float sampleTextureMask(vec2 fragCoord) {
     return 0.0;
   }
 
-  int texWidth = max(u_texWidth, 1);
+  int texWidth = u_texWidth > 1 ? u_texWidth : 1;
   int texHeight = (u_circleCount + texWidth - 1) / texWidth;
   float clearFactor = 0.0;
 
@@ -216,13 +220,13 @@ float sampleTextureMask(vec2 fragCoord) {
 
     int xIndex = i - (i / texWidth) * texWidth;
     int yIndex = i / texWidth;
-    float2 uv = float2((float(xIndex) + 0.5) / float(texWidth), (float(yIndex) + 0.5) / float(texHeight));
-    float4 packed = u_circleData.eval(uv);
+    vec2 uv = vec2((float(xIndex) + 0.5) / float(texWidth), (float(yIndex) + 0.5) / float(texHeight));
+    vec4 circleSample = u_circleData.eval(uv);
 
-    float circleX = packed.r * u_unpackScale.x;
-    float circleY = packed.g * u_unpackScale.y;
-    float radiusPx = packed.b * u_unpackScale.z;
-    float circleType = packed.a;
+    float circleX = circleSample.r * u_unpackScale.x;
+    float circleY = circleSample.g * u_unpackScale.y;
+    float radiusPx = circleSample.b * u_unpackScale.z;
+    float circleType = circleSample.a;
 
     clearFactor = max(clearFactor, computeCircleContribution(fragCoord, circleX, circleY, radiusPx, circleType));
 
@@ -246,7 +250,7 @@ float sampleUniformMask(vec2 fragCoord) {
       break;
     }
 
-    float4 circle = u_circleUniforms[i];
+    vec4 circle = u_circleUniforms[i];
     clearFactor = max(clearFactor, computeCircleContribution(fragCoord, circle.x, circle.y, circle.z, circle.w));
 
     if (clearFactor >= 0.999) {
@@ -311,7 +315,7 @@ export const defaultSkiaCloudUniforms: SkiaCloudUniforms = {
   u_unpackScale: [1, 1, 1],
   u_maskMode: 2,
   u_circleData: null,
-  u_circleUniforms: new Float32Array(0),
+  u_circleUniforms: new Float32Array(UNIFORM_MASK_FLOAT_COUNT),
 };
 
 /**
@@ -325,9 +329,42 @@ export function validateSkiaCloudUniforms(uniforms: Partial<SkiaCloudUniforms>):
   const unpackScale = uniforms.u_unpackScale ?? defaultSkiaCloudUniforms.u_unpackScale;
   const circleData = uniforms.u_circleData ?? defaultSkiaCloudUniforms.u_circleData;
   const circleUniformsSource = uniforms.u_circleUniforms ?? defaultSkiaCloudUniforms.u_circleUniforms;
-  const circleUniforms = circleUniformsSource instanceof Float32Array
-    ? circleUniformsSource
-    : new Float32Array(circleUniformsSource);
+  const circleUniforms = (() => {
+    if (circleUniformsSource instanceof Float32Array) {
+      if (circleUniformsSource.length === UNIFORM_MASK_FLOAT_COUNT) {
+        return circleUniformsSource;
+      }
+
+      if (__DEV__) {
+        console.warn('🌫️ Normalizing fog uniform buffer length', {
+          providedLength: circleUniformsSource.length,
+          expectedLength: UNIFORM_MASK_FLOAT_COUNT,
+        });
+      }
+
+      const normalized = new Float32Array(UNIFORM_MASK_FLOAT_COUNT);
+      normalized.set(circleUniformsSource.subarray(0, Math.min(circleUniformsSource.length, UNIFORM_MASK_FLOAT_COUNT)));
+      return normalized;
+    }
+
+    const sourceArray = Array.isArray(circleUniformsSource)
+      ? circleUniformsSource
+      : Array.from(circleUniformsSource ?? []);
+
+    if (__DEV__ && sourceArray.length !== UNIFORM_MASK_FLOAT_COUNT) {
+      console.warn('🌫️ Converting fog uniform buffer from generic iterable', {
+        providedLength: sourceArray.length,
+        expectedLength: UNIFORM_MASK_FLOAT_COUNT,
+      });
+    }
+
+    const normalized = new Float32Array(UNIFORM_MASK_FLOAT_COUNT);
+    for (let i = 0; i < Math.min(sourceArray.length, UNIFORM_MASK_FLOAT_COUNT); i++) {
+      const value = Number(sourceArray[i]);
+      normalized[i] = Number.isFinite(value) ? value : 0;
+    }
+    return normalized;
+  })();
 
   return {
     u_time: Math.max(0, uniforms.u_time ?? defaultSkiaCloudUniforms.u_time),

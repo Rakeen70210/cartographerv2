@@ -35,7 +35,8 @@ export class FogService {
     const cacheKey = this.generateCacheKey(exploredAreas, zoomLevel, bounds);
     const cached = this.fogGeometryCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-      this.performanceMonitorService.recordFrame();
+      const endTime = performance.now();
+      this.performanceMonitorService.recordFogGenerationMetrics(endTime - startTime, cached.geometry.features.length);
       console.log('🌫️ Returning cached fog geometry with', cached.geometry.features.length, 'features');
       return cached.geometry;
     }
@@ -72,9 +73,10 @@ export class FogService {
 
     // Record performance metrics
     const endTime = performance.now();
-    this.performanceMonitorService.recordFrame();
+    const generationDuration = endTime - startTime;
+    this.performanceMonitorService.recordFogGenerationMetrics(generationDuration, fogFeatures.length);
     
-    console.log(`🌫️ Fog geometry generated in ${(endTime - startTime).toFixed(2)}ms for zoom ${zoomLevel} with ${fogFeatures.length} features`);
+    console.log(`🌫️ Fog geometry generated in ${generationDuration.toFixed(2)}ms for zoom ${zoomLevel} with ${fogFeatures.length} features`);
 
     return geometry;
   }

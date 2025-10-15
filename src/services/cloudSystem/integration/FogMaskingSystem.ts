@@ -44,11 +44,15 @@ export class FogMaskingSystem {
   private explorationMaskManager: ExplorationMaskManager;
   private blurMaskManager: BlurMaskManager;
   private config: FogMaskingConfig;
+  private readonly pathOpUnion: number | string | undefined;
 
   constructor(config: FogMaskingConfig = DEFAULT_FOG_MASKING_CONFIG) {
     this.explorationMaskManager = new ExplorationMaskManager();
     this.blurMaskManager = new BlurMaskManager();
     this.config = { ...config };
+  const unionCandidate = Skia.PathOp?.Union;
+  const unionType = typeof unionCandidate;
+  this.pathOpUnion = unionType === 'number' || unionType === 'string' ? unionCandidate : undefined;
   }
 
   /**
@@ -124,7 +128,14 @@ export class FogMaskingSystem {
       if (screenCoords) {
         const circlePath = Skia.Path.Make();
         circlePath.addCircle(screenCoords.x, screenCoords.y, screenCoords.radius);
-        path.op(circlePath, Skia.PathOp.Union);
+        if (this.pathOpUnion !== undefined && typeof path.op === 'function') {
+          path.op(circlePath, this.pathOpUnion);
+        } else if (typeof path.addPath === 'function') {
+          path.addPath(circlePath);
+        } else {
+          // Last resort: draw directly onto circlePath replacement
+          path.addCircle(screenCoords.x, screenCoords.y, screenCoords.radius);
+        }
       }
     }
 
@@ -162,7 +173,11 @@ export class FogMaskingSystem {
     }
 
     const combinedPath = Skia.Path.MakeFromSVGString(exploredPath.toSVGString()) || exploredPath;
-    combinedPath.op(dissipationPath, Skia.PathOp.Union);
+    if (this.pathOpUnion !== undefined && typeof combinedPath.op === 'function') {
+      combinedPath.op(dissipationPath, this.pathOpUnion);
+    } else if (typeof combinedPath.addPath === 'function') {
+      combinedPath.addPath(dissipationPath);
+    }
     
     return combinedPath;
   }
