@@ -26,6 +26,7 @@ export class PerformanceOptimizer {
   private memoryManagementService = getMemoryManagementService();
   private deviceCapabilityService = getDeviceCapabilityService();
   private isOptimizing = false;
+  private currentOptimizationPromise: Promise<OptimizationResult> | null = null;
   private optimizationHistory: OptimizationResult[] = [];
 
   /**
@@ -45,10 +46,32 @@ export class PerformanceOptimizer {
   async optimizePerformance(config: PerformanceOptimizationConfig): Promise<OptimizationResult> {
     if (this.isOptimizing) {
       console.warn('Optimization already in progress');
+      if (this.currentOptimizationPromise) {
+        return this.currentOptimizationPromise;
+      }
       return this.getLastOptimizationResult();
     }
 
     this.isOptimizing = true;
+    const optimizationPromise = this.executeOptimization(config)
+      .then(result => {
+        this.optimizationHistory.push(result);
+        return result;
+      })
+      .finally(() => {
+        this.isOptimizing = false;
+        this.currentOptimizationPromise = null;
+      });
+
+    this.currentOptimizationPromise = optimizationPromise;
+
+    return optimizationPromise;
+  }
+
+  /**
+   * Execute optimization workflow
+   */
+  private async executeOptimization(config: PerformanceOptimizationConfig): Promise<OptimizationResult> {
     const startTime = Date.now();
     const appliedOptimizations: string[] = [];
     let memoryFreed = 0;
@@ -98,8 +121,6 @@ export class PerformanceOptimizer {
         recommendations
       };
 
-      this.optimizationHistory.push(result);
-      
       const endTime = Date.now();
       console.log(`Performance optimization completed in ${endTime - startTime}ms:`, result);
 
@@ -107,8 +128,6 @@ export class PerformanceOptimizer {
     } catch (error) {
       console.error('Performance optimization failed:', error);
       throw error;
-    } finally {
-      this.isOptimizing = false;
     }
   }
 

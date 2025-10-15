@@ -127,7 +127,7 @@ class PerformanceMonitorService {
     if (this.isMonitoring) return;
 
     this.isMonitoring = true;
-    this.lastFrameTime = performance.now();
+    this.lastFrameTime = this.getTimestamp();
     
     // Start FPS monitoring
     this.monitoringInterval = setInterval(() => {
@@ -166,19 +166,62 @@ class PerformanceMonitorService {
   /**
    * Record frame timing for FPS calculation
    */
-  recordFrame(): void {
+  recordFrame(frameDurationMs?: number): void {
     if (!this.isMonitoring) return;
 
-    const currentTime = performance.now();
-    const frameTime = currentTime - this.lastFrameTime;
-    
+    let frameTime: number;
+
+    if (typeof frameDurationMs === 'number' && Number.isFinite(frameDurationMs) && frameDurationMs >= 0) {
+      frameTime = frameDurationMs;
+      this.lastFrameTime = this.getTimestamp();
+    } else {
+      const currentTime = this.getTimestamp();
+      frameTime = currentTime - this.lastFrameTime;
+      this.lastFrameTime = currentTime;
+    }
+
+    if (!Number.isFinite(frameTime) || frameTime <= 0) {
+      return;
+    }
+
     this.frameTimeHistory.push(frameTime);
     if (this.frameTimeHistory.length > 60) {
       this.frameTimeHistory.shift(); // Keep only last 60 frames
     }
     
-    this.lastFrameTime = currentTime;
     this.frameCount++;
+  }
+
+  /**
+   * Record fog generation metrics without affecting FPS calculations
+   */
+  recordFogGenerationMetrics(durationMs: number, featureCount: number): void {
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      return;
+    }
+
+    this.currentMetrics.renderTime = durationMs;
+    if (Number.isFinite(featureCount) && featureCount >= 0) {
+      this.currentMetrics.fogComplexity = featureCount;
+    }
+  }
+
+  /**
+   * Ingest externally measured frame metrics (e.g., from Skia performance monitor)
+   */
+  ingestFrameMetrics(fps: number, frameTimeMs: number): void {
+    if (!this.isMonitoring) return;
+    if (!Number.isFinite(fps) || fps <= 0 || !Number.isFinite(frameTimeMs) || frameTimeMs <= 0) {
+      return;
+    }
+
+    this.currentMetrics.fps = Math.min(fps, this.performanceSettings?.frameRateTarget ?? 60);
+    this.currentMetrics.frameTime = frameTimeMs;
+
+    this.frameTimeHistory.push(frameTimeMs);
+    if (this.frameTimeHistory.length > 60) {
+      this.frameTimeHistory.shift();
+    }
   }
 
   /**
@@ -447,6 +490,14 @@ class PerformanceMonitorService {
     if (removedCount > 0) {
       console.log(`Memory cleanup: removed ${removedCount} cache entries, freed ${((totalCacheSize - currentSize) / 1024 / 1024).toFixed(1)}MB`);
     }
+  }
+
+  private getTimestamp(): number {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+      return performance.now();
+    }
+
+    return Date.now();
   }
 }
 

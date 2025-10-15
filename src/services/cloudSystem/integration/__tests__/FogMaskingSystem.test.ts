@@ -3,40 +3,50 @@ import { GenericExploredArea } from '../../../../types/fog';
 import { SkiaFogViewport, DissipationAnimation } from '../../../../types/skiaFog';
 
 // Mock Skia since it's not available in test environment
-jest.mock('@shopify/react-native-skia', () => ({
-  Skia: {
-    Path: {
-      Make: jest.fn(() => ({
-        addCircle: jest.fn(),
-        op: jest.fn(),
-        toSVGString: jest.fn(() => 'M0,0L1,1Z')
+jest.mock('@shopify/react-native-skia', () => {
+  const BlurStyle = {
+    Normal: 'normal'
+  };
+
+  const BlendMode = {
+    SrcOut: 'srcOut'
+  };
+
+  return {
+    Skia: {
+      Path: {
+        Make: jest.fn(() => ({
+          addCircle: jest.fn(),
+          op: jest.fn(),
+          addPath: jest.fn(),
+          toSVGString: jest.fn(() => 'M0,0L1,1Z')
+        })),
+        MakeFromSVGString: jest.fn(() => ({
+          addCircle: jest.fn(),
+          op: jest.fn(),
+          addPath: jest.fn(),
+          toSVGString: jest.fn(() => 'M0,0L1,1Z')
+        }))
+      },
+      PathOp: {
+        Union: 'union'
+      },
+      Paint: jest.fn(() => ({
+        setBlendMode: jest.fn(),
+        setMaskFilter: jest.fn(),
+        setAlphaf: jest.fn(),
+        setAntiAlias: jest.fn()
       })),
-      MakeFromSVGString: jest.fn(() => ({
-        addCircle: jest.fn(),
-        op: jest.fn(),
-        toSVGString: jest.fn(() => 'M0,0L1,1Z')
-      }))
+      MaskFilter: {
+        MakeBlur: jest.fn(() => ({}))
+      },
+      BlurStyle,
+      BlendMode
     },
-    PathOp: {
-      Union: 'union'
-    },
-    Paint: jest.fn(() => ({
-      setBlendMode: jest.fn(),
-      setMaskFilter: jest.fn(),
-      setAlphaf: jest.fn(),
-      setAntiAlias: jest.fn()
-    })),
-    MaskFilter: {
-      MakeBlur: jest.fn(() => ({}))
-    },
-    BlurStyle: {
-      Normal: 'normal'
-    },
-    BlendMode: {
-      SrcOut: 'srcOut'
-    }
-  }
-}));
+    BlurStyle,
+    BlendMode
+  };
+});
 
 describe('FogMaskingSystem', () => {
   let maskingSystem: FogMaskingSystem;
