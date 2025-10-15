@@ -500,8 +500,10 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     });
   }
 
+  const overlayOpacity = Math.max(0.05, Math.min(fogOpacity * cloudDensity, 0.75));
+
   return (
-    <Canvas style={styles.canvas}>
+    <Canvas style={[styles.canvas, { opacity: overlayOpacity }]}>
       <Group>
         {shaderInitialized && activeShader ? (
           // Render with cloud shader (main or fallback shader)

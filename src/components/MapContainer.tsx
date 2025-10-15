@@ -200,48 +200,51 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* ... (omitted for brevity, no changes here) */}
-      <Mapbox.MapView
-        ref={mapRef}
-        style={styles.map}
-        onDidFinishLoadingMap={handleMapReady}
-        onMapIdle={handleMapIdle}
-        onMapLoadingError={handleMapError}
-        styleURL={Mapbox.StyleURL.Street}
-        // ... other props
-      >
-        <Mapbox.Camera
-          ref={cameraRef}
-          centerCoordinate={viewport.center}
-          zoomLevel={viewport.zoom}
-          animationMode="flyTo"
-          animationDuration={MAPBOX_CONFIG.ANIMATION_DURATION}
-        />
-        <Mapbox.UserLocation
-          visible={true}
-          showsUserHeadingIndicator={true}
-          minDisplacement={10}
-          onUpdate={handleUserLocationUpdate}
-        />
-        {isMapReady && fogVisible && (
-          <SkiaFogOverlay
-            exploredAreas={exploredAreas}
+      <View style={styles.mapWrapper}>
+        <Mapbox.MapView
+          ref={mapRef}
+          style={styles.map}
+          onDidFinishLoadingMap={handleMapReady}
+          onMapIdle={handleMapIdle}
+          onMapLoadingError={handleMapError}
+          styleURL={Mapbox.StyleURL.Street}
+          // ... other props
+        >
+          <Mapbox.Camera
+            ref={cameraRef}
+            centerCoordinate={viewport.center}
             zoomLevel={viewport.zoom}
-            viewport={{
-              width: screenWidth,
-              height: screenHeight,
-              bounds: {
-                north: viewport.center[1] + (0.01 * Math.pow(2, 15 - viewport.zoom)),
-                south: viewport.center[1] - (0.01 * Math.pow(2, 15 - viewport.zoom)),
-                east: viewport.center[0] + (0.01 * Math.pow(2, 15 - viewport.zoom)),
-                west: viewport.center[0] - (0.01 * Math.pow(2, 15 - viewport.zoom))
-              }
-            }}
-            enablePerformanceMonitoring={true}
-            targetFPS={30}
+            animationMode="flyTo"
+            animationDuration={MAPBOX_CONFIG.ANIMATION_DURATION}
           />
+          <Mapbox.UserLocation
+            visible={true}
+            showsUserHeadingIndicator={true}
+            minDisplacement={10}
+            onUpdate={handleUserLocationUpdate}
+          />
+        </Mapbox.MapView>
+        {isMapReady && fogVisible && (
+          <View style={styles.fogOverlay} pointerEvents="none">
+            <SkiaFogOverlay
+              exploredAreas={exploredAreas}
+              zoomLevel={viewport.zoom}
+              viewport={{
+                width: screenWidth,
+                height: screenHeight,
+                bounds: {
+                  north: viewport.center[1] + (0.01 * Math.pow(2, 15 - viewport.zoom)),
+                  south: viewport.center[1] - (0.01 * Math.pow(2, 15 - viewport.zoom)),
+                  east: viewport.center[0] + (0.01 * Math.pow(2, 15 - viewport.zoom)),
+                  west: viewport.center[0] - (0.01 * Math.pow(2, 15 - viewport.zoom))
+                }
+              }}
+              enablePerformanceMonitoring={true}
+              targetFPS={30}
+            />
+          </View>
         )}
-      </Mapbox.MapView>
+      </View>
     </View>
   );
 };
@@ -250,8 +253,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  map: {
+  mapWrapper: {
     flex: 1,
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  fogOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
   },
   debugInfo: {
     position: 'absolute',
