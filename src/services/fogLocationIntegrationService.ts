@@ -2,20 +2,22 @@ import { store } from '../store';
 import { locationService } from './locationService';
 import { explorationService, ExplorationResult } from './explorationService';
 import { getFogService } from './fogService';
+import { spatialCacheService } from './spatialCacheService';
 // Note: fogAnimationService removed - animations now handled by SkiaFogOverlay
-import { 
-  updateLocation, 
-  setLocationError 
+import {
+  updateLocation,
+  setLocationError
 } from '../store/slices/locationSlice';
-import { 
-  addExploredArea, 
+import {
+  addExploredArea,
+  setExploredAreas,
   setProcessingLocation,
-  setExplorationError 
+  setExplorationError
 } from '../store/slices/explorationSlice';
-import { 
+import {
   updateFogForExploration,
   startFogClearingAnimation,
-  completeFogClearingAnimation 
+  completeFogClearingAnimation
 } from '../store/slices/fogSlice';
 import { LocationUpdate } from '../types';
 
@@ -140,6 +142,9 @@ export class FogLocationIntegrationService {
 
       console.log('New area explored, updating fog:', result.exploredArea);
 
+      // Add to spatial cache for consistent querying
+      spatialCacheService.add(result.exploredArea);
+
       // Add explored area to Redux state
       store.dispatch(addExploredArea({
         id: result.exploredArea.id?.toString() ?? `area_${Date.now()}`,
@@ -177,7 +182,7 @@ export class FogLocationIntegrationService {
     );
 
     const animationId = `anim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     this.activeAnimationCount++;
 
     // Update Redux state - SkiaFogOverlay will handle the actual animation
@@ -205,19 +210,35 @@ export class FogLocationIntegrationService {
    */
   private async updateFogGeometry(): Promise<void> {
     try {
-      // Get all explored areas from exploration service
+      // Get all explored areas from exploration service (database)
       const exploredAreas = await explorationService.getAllExploredAreas();
+
+      // Initialize spatial cache with explored areas
+      await spatialCacheService.initialize();
+
+      // Convert to Redux-compatible format and update exploration state
+      const explorationStateAreas = exploredAreas.map(area => ({
+        id: area.id?.toString() ?? `area_${area.latitude}_${area.longitude}`,
+        center: [area.longitude, area.latitude] as [number, number],
+        radius: area.radius,
+        exploredAt: new Date(area.explored_at).getTime(),
+        accuracy: area.accuracy,
+      }));
+
+      // CRITICAL: Update exploration slice with areas from database
+      // This is what SkiaFogOverlay reads via MapContainer
+      store.dispatch(setExploredAreas(explorationStateAreas));
 
       // Generate updated fog geometry
       const fogGeometry = this.fogService.generateFogGeometry(exploredAreas);
 
-      // Update Redux state
+      // Update fog slice state
       store.dispatch(updateFogForExploration({
         geometry: fogGeometry,
         animate: false, // Don't animate for regular updates
       }));
 
-      console.log(`Fog geometry updated with ${exploredAreas.length} explored areas`);
+      console.log(`Fog geometry updated and Redux synced with ${exploredAreas.length} explored areas`);
 
     } catch (error) {
       console.error('Error updating fog geometry:', error);
@@ -241,7 +262,7 @@ export class FogLocationIntegrationService {
       loc1.latitude, loc1.longitude,
       loc2.latitude, loc2.longitude
     );
-    
+
     // Consider locations similar if they're within 10 meters AND accuracy hasn't improved significantly
     const accuracyImprovement = Math.abs(loc1.accuracy - loc2.accuracy);
     return distance < 10 && accuracyImprovement < 5;
@@ -255,8 +276,8 @@ export class FogLocationIntegrationService {
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
@@ -275,16 +296,16 @@ export class FogLocationIntegrationService {
   public async start(): Promise<boolean> {
     try {
       console.log('Starting fog-location integration...');
-      
+
       // Start exploration service (which will start location tracking)
       const success = await explorationService.startExploration();
-      
+
       if (success) {
         // Load initial fog geometry
         await this.updateFogGeometry();
         console.log('Fog-location integration started successfully');
       }
-      
+
       return success;
     } catch (error) {
       console.error('Error starting fog-location integration:', error);
@@ -298,7 +319,7 @@ export class FogLocationIntegrationService {
   public async stop(): Promise<void> {
     try {
       console.log('Stopping fog-location integration...');
-      
+
       // Clear any pending timeouts
       if (this.processingTimeout) {
         clearTimeout(this.processingTimeout);
@@ -310,7 +331,7 @@ export class FogLocationIntegrationService {
 
       // Stop exploration service
       await explorationService.stopExploration();
-      
+
       console.log('Fog-location integration stopped');
     } catch (error) {
       console.error('Error stopping fog-location integration:', error);
@@ -334,7 +355,7 @@ export class FogLocationIntegrationService {
     config: FogLocationConfig;
   }> {
     const explorationStatus = await explorationService.getExplorationStatus();
-    
+
     return {
       isActive: explorationStatus.isActive,
       activeAnimations: this.activeAnimationCount,
@@ -354,7 +375,7 @@ export class FogLocationIntegrationService {
     try {
       // Process manual exploration
       const result = await explorationService.processManualLocation(latitude, longitude, 10);
-      
+
       if (result.isNewArea) {
         await this.handleExplorationResult(result);
       }

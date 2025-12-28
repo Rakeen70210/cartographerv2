@@ -17,7 +17,7 @@ export interface BlurMaskConfig {
 export const DEFAULT_BLUR_CONFIG: BlurMaskConfig = {
   blurRadius: 20,
   blurStyle: BlurStyle.Normal,
-  blendMode: BlendMode.SrcOut, // Cut out explored areas from fog
+  blendMode: BlendMode.DstOut, // Cut out explored areas from fog
   featherIntensity: 0.7
 };
 
@@ -52,18 +52,22 @@ export class BlurMaskManager {
     }
 
     const paint = Skia.Paint();
-    
+
+    // Set a fully opaque color - the color itself doesn't matter for DstOut,
+    // but the paint needs a color for the blend mode to work correctly
+    paint.setColor(Skia.Color('white'));
+
     // Set blend mode for cutting out explored areas
     paint.setBlendMode(config.blendMode);
-    
+
     // Apply blur mask filter
     const maskFilter = this.createBlurMask(config);
     paint.setMaskFilter(maskFilter);
-    
-    // Set alpha based on feather intensity
-    const alpha = Math.round(255 * config.featherIntensity);
-    paint.setAlphaf(alpha / 255);
-    
+
+    // Set opacity to maximum to ensure full clearing of explored areas
+    // The blur filter itself handles the edge softening
+    paint.setAlphaf(1.0);
+
     // Enable anti-aliasing for smooth edges
     paint.setAntiAlias(true);
 
@@ -81,10 +85,10 @@ export class BlurMaskManager {
     config: BlurMaskConfig = DEFAULT_BLUR_CONFIG
   ): { maskedPath: SkPath; paint: SkPaint } {
     const paint = this.createMaskPaint(config);
-    
+
     // Create a copy of the path to avoid modifying the original
     const maskedPath = Skia.Path.MakeFromSVGString(path.toSVGString()) || path;
-    
+
     return {
       maskedPath,
       paint
@@ -104,7 +108,7 @@ export class BlurMaskManager {
     // Lower zoom = larger blur radius for smoother appearance
     const zoomFactor = Math.max(0.3, Math.min(2.0, 1.0 / Math.sqrt(zoomLevel)));
     const adaptiveBlurRadius = baseConfig.blurRadius * zoomFactor;
-    
+
     // Adjust feather intensity based on viewport size
     // Larger viewports can handle more intense feathering
     const viewportArea = viewport.width * viewport.height;
@@ -127,7 +131,7 @@ export class BlurMaskManager {
     baseConfig: BlurMaskConfig = DEFAULT_BLUR_CONFIG
   ): Array<{ maskedPath: SkPath; paint: SkPaint; intensity: number }> {
     const results: Array<{ maskedPath: SkPath; paint: SkPaint; intensity: number }> = [];
-    
+
     for (let i = 0; i < layers; i++) {
       const layerIntensity = (i + 1) / layers;
       const layerConfig: BlurMaskConfig = {
@@ -135,16 +139,16 @@ export class BlurMaskManager {
         blurRadius: baseConfig.blurRadius * layerIntensity,
         featherIntensity: baseConfig.featherIntensity * (1.0 - layerIntensity * 0.3)
       };
-      
+
       const { maskedPath, paint } = this.applyBlurMaskToPath(path, layerConfig);
-      
+
       results.push({
         maskedPath,
         paint,
         intensity: layerIntensity
       });
     }
-    
+
     return results;
   }
 
@@ -160,9 +164,9 @@ export class BlurMaskManager {
       mid: { blur: 0.8, feather: 0.9 },
       high: { blur: 1.0, feather: 1.0 }
     };
-    
+
     const multiplier = performanceMultipliers[deviceTier];
-    
+
     return {
       ...config,
       blurRadius: Math.max(3, config.blurRadius * multiplier.blur),
@@ -175,11 +179,11 @@ export class BlurMaskManager {
    */
   private configEquals(config1: BlurMaskConfig, config2: BlurMaskConfig | null): boolean {
     if (!config2) return false;
-    
+
     return config1.blurRadius === config2.blurRadius &&
-           config1.blurStyle === config2.blurStyle &&
-           config1.blendMode === config2.blendMode &&
-           config1.featherIntensity === config2.featherIntensity;
+      config1.blurStyle === config2.blurStyle &&
+      config1.blendMode === config2.blendMode &&
+      config1.featherIntensity === config2.featherIntensity;
   }
 
   /**
@@ -193,9 +197,9 @@ export class BlurMaskManager {
   /**
    * Get cache statistics for debugging
    */
-  public getCacheStats(): { 
-    hasCachedPaint: boolean; 
-    lastConfig: BlurMaskConfig | null 
+  public getCacheStats(): {
+    hasCachedPaint: boolean;
+    lastConfig: BlurMaskConfig | null
   } {
     return {
       hasCachedPaint: this.cachedPaint !== null,
@@ -208,15 +212,15 @@ export class BlurMaskManager {
    */
   public validateConfig(config: BlurMaskConfig): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     if (config.blurRadius < 0 || config.blurRadius > 100) {
       errors.push('Blur radius must be between 0 and 100');
     }
-    
+
     if (config.featherIntensity < 0 || config.featherIntensity > 1) {
       errors.push('Feather intensity must be between 0 and 1');
     }
-    
+
     return {
       valid: errors.length === 0,
       errors

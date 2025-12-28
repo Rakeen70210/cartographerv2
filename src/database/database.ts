@@ -38,9 +38,14 @@ export class DatabaseManager {
 
   async initialize(): Promise<void> {
     try {
+      console.log('DatabaseManager: Starting initialization...');
       this.db = await SQLite.openDatabaseAsync(this.config.name);
+      console.log('DatabaseManager: SQLite database opened');
       await this.runMigrations();
+      console.log('DatabaseManager: Migrations completed');
       await this.initializeUserStats();
+      console.log('DatabaseManager: User stats initialized');
+      console.log('DatabaseManager: Initialization finished successfully');
     } catch (error) {
       console.error('Database initialization failed:', error);
       throw new Error(`Failed to initialize database: ${error}`);
@@ -81,14 +86,14 @@ export class DatabaseManager {
         for (const query of migration.up) {
           await this.db!.execAsync(query);
         }
-        
+
         // Record migration
         await this.db!.runAsync(
           'INSERT INTO schema_version (version) VALUES (?)',
           [migration.version]
         );
       });
-      
+
       console.log(`Applied migration version ${migration.version}`);
     } catch (error) {
       console.error(`Migration ${migration.version} failed:`, error);
@@ -127,7 +132,7 @@ export class DatabaseManager {
 
   async vacuum(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
-    
+
     try {
       await this.db.execAsync('VACUUM');
     } catch (error) {
@@ -146,10 +151,10 @@ export class DatabaseManager {
   async reinitialize(): Promise<void> {
     try {
       console.log('Reinitializing database...');
-      
+
       // Close existing connection
       await this.close();
-      
+
       // Delete the database file to start fresh
       try {
         await SQLite.deleteDatabaseAsync(this.config.name);
@@ -157,15 +162,22 @@ export class DatabaseManager {
       } catch (error) {
         console.warn('Could not delete database file:', error);
       }
-      
+
       // Initialize fresh database
       await this.initialize();
-      
+
       console.log('Database reinitialization completed');
     } catch (error) {
       console.error('Database reinitialization failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Check if database is initialized and ready for use
+   */
+  isInitialized(): boolean {
+    return this.db !== null;
   }
 
   getDatabase(): SQLite.SQLiteDatabase {

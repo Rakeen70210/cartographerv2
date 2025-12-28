@@ -25,7 +25,7 @@ const normalizeExploredArea = (area: GenericExploredArea): {
   // Handle both database format (latitude/longitude) and Redux format (center)
   const latitude = area.latitude ?? area.center?.[1] ?? 0;
   const longitude = area.longitude ?? area.center?.[0] ?? 0;
-  
+
   // Handle different timestamp formats
   let exploredAt: number;
   if (area.exploredAt) {
@@ -35,7 +35,7 @@ const normalizeExploredArea = (area: GenericExploredArea): {
   } else {
     exploredAt = Date.now();
   }
-  
+
   return {
     id: area.id?.toString() ?? `area_${latitude}_${longitude}_${exploredAt}`,
     latitude,
@@ -73,7 +73,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
   const fogOpacity = useAppSelector(state => state.fog.opacity);
   const baseAnimationSpeed = useAppSelector(state => state.fog.animationSpeed);
   const baseCloudDensity = useAppSelector(state => state.fog.cloudDensity);
-  
+
   // Wind configuration from Redux state
   const windDirection = useAppSelector(state => state.fog.windDirection);
   const windSpeed = useAppSelector(state => state.fog.windSpeed);
@@ -82,7 +82,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
 
   // Skia animated values
   const clock = useClock();
-  
+
   // Wind system state
   const [windSystem] = useState(() => createWindSystem({
     direction: windDirection,
@@ -97,7 +97,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     enablePerformanceMonitoring: true,
     autoRecovery: true,
     maxInitializationAttempts: 3,
-    shaderComplexity: 'simple' // Force simple shaders for Android emulator
+    shaderComplexity: 'standard' // Use standard shaders for cloud effects
   }));
   const [shaderInitialized, setShaderInitialized] = useState(false);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
@@ -139,8 +139,8 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
   const handlePerformanceIssue = useCallback((performanceMetrics: SkiaPerformanceMetrics) => {
     const severity = performanceMetrics.currentFPS < 15 ? 'critical'
       : performanceMetrics.currentFPS < 20 ? 'high'
-      : performanceMetrics.currentFPS < 25 ? 'medium'
-      : 'low';
+        : performanceMetrics.currentFPS < 25 ? 'medium'
+          : 'low';
 
     const logInterval = severity === 'critical' || severity === 'high' ? 15000 : 45000;
     if (severity !== 'low' && shouldLogWithThrottle(lastPerformanceLogTimeRef, logInterval)) {
@@ -172,9 +172,9 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     debugInfo,
     forceQualityReduction
   } = useSkiaPerformanceMonitoring({
-    enabled: enablePerformanceMonitoring,
+    enabled: false, // Disable performance monitoring to reduce overhead (especially in simulators)
     targetFPS,
-    adaptiveQuality: true,
+    adaptiveQuality: true, // Enable adaptive quality to manage shader complexity
     enableDebugLogging: false,
     onQualityChange: handleQualityChange,
     onPerformanceIssue: handlePerformanceIssue
@@ -190,13 +190,13 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     currentQuality.cloudDensity : baseCloudDensity;
 
   const shaderUniforms = useMemo<SkiaCloudUniforms>(() => ({
-    u_time: (clock.current ?? 0) * 0.001,
+    u_time: (clock.value ?? 0) * 0.001,
     u_resolution: [viewport.width, viewport.height],
     u_zoom: zoomLevel,
     u_wind_offset: windOffset,
     u_cloud_density: cloudDensity,
     u_animation_speed: animationSpeed
-  }), [clock.current, viewport.width, viewport.height, zoomLevel, windOffset, cloudDensity, animationSpeed]);
+  }), [clock.value, viewport.width, viewport.height, zoomLevel, windOffset, cloudDensity, animationSpeed]);
 
   // Masking system state with performance-aware configuration
   const [maskingSystem] = useState(() => new FogMaskingSystem({
@@ -214,8 +214,8 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
       currentQuality.shaderComplexity === 'simple'
         ? 'low'
         : currentQuality.shaderComplexity === 'advanced'
-        ? 'high'
-        : 'mid';
+          ? 'high'
+          : 'mid';
 
     maskingSystem.updateConfig({
       performanceMode,
@@ -236,12 +236,12 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
       try {
         console.log('🌫️ Initializing Skia shader system...');
         const success = await shaderSystem.initialize();
-        
+
         if (isMounted) {
           setShaderInitialized(success);
           const systemState = shaderSystem.getSystemState();
           setIsUsingFallback(systemState.isUsingFallback);
-          
+
           if (success) {
             console.log('🌫️ Shader system initialized successfully', {
               fallbackMode: systemState.isUsingFallback
@@ -284,7 +284,9 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     const now = Date.now();
 
     if (enablePerformanceMonitoring) {
-      shaderSystem.setShaderComplexity(currentQuality.shaderComplexity);
+      // Use standard shader complexity for better cloud visuals
+      // The adaptive system will downgrade if FPS drops
+      shaderSystem.setShaderComplexity('standard');
     }
 
     const result = shaderSystem.updateUniforms(shaderUniforms);
@@ -302,20 +304,20 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     const healthCheckInterval = setInterval(async () => {
       const isHealthy = await shaderSystem.performHealthCheck();
       const systemState = shaderSystem.getSystemState();
-      
+
       if (systemState.isUsingFallback !== isUsingFallback) {
         setIsUsingFallback(systemState.isUsingFallback);
         console.log('🌫️ Shader system fallback state changed:', systemState.isUsingFallback);
-        
+
         // Force quality reduction if shader system is struggling
         if (systemState.isUsingFallback && enablePerformanceMonitoring) {
           forceQualityReduction();
         }
       }
-      
+
       if (!isHealthy) {
         console.warn('🌫️ Shader system health check failed');
-        
+
         // Additional performance intervention if health check fails repeatedly
         if (enablePerformanceMonitoring && !isPerformanceAcceptable) {
           console.log('🌫️ Triggering emergency quality reduction due to poor health');
@@ -330,13 +332,24 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
   // Get active dissipation animations from the service
   const dissipationAnimations = useMemo<DissipationAnimation[]>(() => {
     const activeAnimations = fogDissipationService.getActiveAnimations();
-    return activeAnimations.map(anim => ({
-      id: anim.id,
-      center: anim.center,
-      radius: anim.radius,
-      startTime: anim.startTime,
-      duration: anim.duration
-    }));
+    return activeAnimations.map(anim => {
+      // Extract numeric value from Animated.Value
+      let radiusValue = 0;
+      if (typeof anim.radius === 'number') {
+        radiusValue = anim.radius;
+      } else if (anim.radius && typeof (anim.radius as any).__getValue === 'function') {
+        radiusValue = (anim.radius as any).__getValue();
+      } else if (anim.radius && typeof (anim.radius as any)._value === 'number') {
+        radiusValue = (anim.radius as any)._value;
+      }
+      return {
+        id: anim.id,
+        center: anim.center,
+        radius: radiusValue,
+        startTime: anim.startTime,
+        duration: anim.duration
+      };
+    });
   }, [clearingAreas, animationInProgress]); // Re-compute when Redux state changes
 
   // Sync dissipation service with Redux state changes
@@ -386,8 +399,10 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
 
   // Generate fog masking for current frame
   const fogMasking = useMemo(() => {
-    if (!shaderInitialized) return null;
-    
+    if (!shaderInitialized) {
+      return null;
+    }
+
     try {
       return maskingSystem.generateFogMask(
         normalizedExploredAreas,
@@ -401,64 +416,48 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     }
   }, [normalizedExploredAreas, dissipationAnimations, viewport, zoomLevel, shaderInitialized, maskingSystem]);
 
-  // Performance logging in development
-  if (__DEV__ && enablePerformanceMonitoring) {
-    console.log('🌫️ SkiaFogOverlay render:', {
-      exploredAreasCount: exploredAreas.length,
-      normalizedAreasCount: normalizedExploredAreas.length,
-      clearingAreasCount: clearingAreas.length,
-      animationInProgress,
-      zoomLevel,
-      shaderInitialized,
-      isUsingFallback,
-      hasFogMasking: fogMasking !== null,
-      viewport: { width: viewport.width, height: viewport.height },
-      performance: {
-        initialized: performanceInitialized,
-        acceptable: isPerformanceAcceptable,
-        quality: currentQuality,
-        fps: metrics?.currentFPS,
-        debugInfo
-      }
-    });
-  }
+
 
   // Get active shader, texture, and uniforms for rendering
   const activeShader = shaderInitialized ? shaderSystem.getActiveShader() : null;
   const uniformsForSkia = shaderInitialized ? shaderSystem.getUniformsForSkia() : {};
 
+  if (activeShader && __DEV__) {
+    console.debug(`🌫️ Rendering fog with ${shaderSystem.getShaderComplexity()} complexity`);
+  }
+
   return (
     <Canvas style={styles.canvas}>
-      <Group>
+      <Group layer>
         {shaderInitialized && activeShader ? (
           // Render with cloud shader (main or fallback shader)
           <Fill>
-            <Shader 
+            <Shader
               source={activeShader}
               uniforms={uniformsForSkia}
             />
           </Fill>
         ) : (
           // Ultimate fallback to basic fog fill when nothing else works
-          <Fill 
+          <Fill
             color={`rgba(139, 157, 195, ${Math.min(fogOpacity * cloudDensity, 0.8)})`}
           />
         )}
-        
+
         {/* Apply exploration area masking */}
         {fogMasking && (
           <Group>
             {/* Apply layered blur effects if enabled */}
             {fogMasking.layeredEffects?.map((layer, index) => (
-              <Path 
+              <Path
                 key={`layer_${index}`}
                 path={layer.path}
                 paint={layer.paint}
               />
             ))}
-            
+
             {/* Apply main mask */}
-            <Path 
+            <Path
               path={fogMasking.combinedMaskPath}
               paint={fogMasking.maskPaint}
             />

@@ -106,13 +106,13 @@ class PerformanceMonitorService {
     try {
       await this.deviceCapabilityService.initialize();
       this.performanceSettings = this.deviceCapabilityService.getPerformanceSettings();
-      
+
       // Adjust LOD configurations based on device capabilities
       this.adjustLODForDevice();
-      
+
       // Configure memory management based on device
       this.configureMemoryManagement();
-      
+
       console.log('Performance monitor initialized with settings:', this.performanceSettings);
     } catch (error) {
       console.error('Failed to initialize performance monitor:', error);
@@ -128,7 +128,7 @@ class PerformanceMonitorService {
 
     this.isMonitoring = true;
     this.lastFrameTime = performance.now();
-    
+
     // Start FPS monitoring
     this.monitoringInterval = setInterval(() => {
       this.updatePerformanceMetrics();
@@ -149,7 +149,7 @@ class PerformanceMonitorService {
     if (!this.isMonitoring) return;
 
     this.isMonitoring = false;
-    
+
     if (this.monitoringInterval) {
       clearInterval(this.monitoringInterval);
       this.monitoringInterval = null;
@@ -171,12 +171,12 @@ class PerformanceMonitorService {
 
     const currentTime = performance.now();
     const frameTime = currentTime - this.lastFrameTime;
-    
+
     this.frameTimeHistory.push(frameTime);
     if (this.frameTimeHistory.length > 60) {
       this.frameTimeHistory.shift(); // Keep only last 60 frames
     }
-    
+
     this.lastFrameTime = currentTime;
     this.frameCount++;
   }
@@ -211,7 +211,7 @@ class PerformanceMonitorService {
 
     const currentFPS = this.currentMetrics.fps;
     const memoryUsage = this.currentMetrics.memoryUsageMB;
-    
+
     return this.deviceCapabilityService.getAdaptiveSettings(currentFPS, memoryUsage);
   }
 
@@ -288,7 +288,7 @@ class PerformanceMonitorService {
       // Get memory metrics
       const memoryMetrics = await this.deviceCapabilityService.getPerformanceMetrics();
       this.currentMetrics.memoryUsageMB = memoryMetrics.memoryUsageMB;
-      
+
       this.memoryHistory.push(memoryMetrics.memoryUsageMB);
       if (this.memoryHistory.length > 60) {
         this.memoryHistory.shift();
@@ -310,21 +310,23 @@ class PerformanceMonitorService {
     }
   }
 
+  private lastFPSWarningTime = 0;
+  private lastMemoryWarningTime = 0;
+  private readonly warningThrottleMs = 10000; // Only warn once per 10 seconds
+
   private checkPerformanceThresholds(): void {
     if (!this.performanceSettings) return;
 
     const { fps, memoryUsageMB } = this.currentMetrics;
     const { frameRateTarget, memoryThresholdMB } = this.performanceSettings;
 
-    // Check FPS threshold
+    // FPS threshold check (logging disabled to reduce console spam)
     if (fps < frameRateTarget * 0.7) {
-      console.warn(`Low FPS detected: ${fps.toFixed(1)} (target: ${frameRateTarget})`);
       this.triggerPerformanceOptimization('fps');
     }
 
-    // Check memory threshold
+    // Memory threshold check (logging disabled to reduce console spam)
     if (memoryUsageMB > memoryThresholdMB) {
-      console.warn(`High memory usage: ${memoryUsageMB}MB (threshold: ${memoryThresholdMB}MB)`);
       this.triggerPerformanceOptimization('memory');
     }
   }
@@ -334,9 +336,7 @@ class PerformanceMonitorService {
       this.memoryManagementConfig.aggressiveCleanup = true;
       this.performMemoryCleanup(true);
     }
-    
-    // Additional optimizations could be triggered here
-    console.log(`Performance optimization triggered due to: ${reason}`);
+    // Logging disabled for performance
   }
 
   private adjustLODForDevice(): void {
@@ -348,7 +348,7 @@ class PerformanceMonitorService {
     this.lodConfigurations.forEach((lod, key) => {
       lod.maxFogFeatures = Math.floor(lod.maxFogFeatures * multiplier);
       lod.cloudComplexity *= multiplier;
-      
+
       if (capabilities.tier === 'low') {
         lod.particleQuality = 'low';
         if (key === 'world' || key === 'country') {
@@ -361,7 +361,7 @@ class PerformanceMonitorService {
   private adjustLODForPerformance(baseLOD: LevelOfDetailSettings): LevelOfDetailSettings {
     const adjustedLOD = { ...baseLOD };
     const { fps, memoryUsageMB } = this.currentMetrics;
-    
+
     if (!this.performanceSettings) return adjustedLOD;
 
     const { frameRateTarget, memoryThresholdMB } = this.performanceSettings;
@@ -390,7 +390,7 @@ class PerformanceMonitorService {
     if (!capabilities) return;
 
     const memoryGB = capabilities.memoryGB;
-    
+
     this.memoryManagementConfig = {
       maxCacheSize: Math.min(100 * 1024 * 1024, memoryGB * 1024 * 1024 * 0.1), // 10% of total memory or 100MB max
       cleanupInterval: capabilities.tier === 'low' ? 15000 : 30000, // More frequent cleanup on low-end devices
@@ -402,7 +402,7 @@ class PerformanceMonitorService {
   private performMemoryCleanup(force: boolean = false): void {
     const now = Date.now();
     const { maxCacheSize, memoryThreshold, aggressiveCleanup } = this.memoryManagementConfig;
-    
+
     // Calculate total cache size
     let totalCacheSize = 0;
     this.cacheRegistry.forEach(entry => {
@@ -410,9 +410,9 @@ class PerformanceMonitorService {
     });
 
     // Determine if cleanup is needed
-    const needsCleanup = force || 
-                        totalCacheSize > maxCacheSize || 
-                        (aggressiveCleanup && totalCacheSize > maxCacheSize * 0.7);
+    const needsCleanup = force ||
+      totalCacheSize > maxCacheSize ||
+      (aggressiveCleanup && totalCacheSize > maxCacheSize * 0.7);
 
     if (!needsCleanup) return;
 
@@ -432,13 +432,13 @@ class PerformanceMonitorService {
 
     for (const [key, entry] of sortedEntries) {
       if (currentSize <= targetSize) break;
-      
+
       // Don't remove recently accessed high-priority items unless forced
       const isRecent = now - entry.lastAccessed < 30000; // 30 seconds
       const isHighPriority = entry.priority >= 5;
-      
+
       if (!force && isRecent && isHighPriority) continue;
-      
+
       this.cacheRegistry.delete(key);
       currentSize -= entry.size;
       removedCount++;
