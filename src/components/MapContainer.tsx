@@ -5,10 +5,10 @@ import { MAPBOX_CONFIG, validateMapboxConfig } from '../config/mapbox';
 import { MapContainerProps, MapContainerState } from '../types/map';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { getErrorRecoveryService, spatialCacheService } from '../services';
-import { 
-  setMapReady, 
-  setMapError, 
-  updateViewport, 
+import {
+  setMapReady,
+  setMapError,
+  updateViewport,
   setUserLocation,
   setMapLoading
 } from '../store/slices/mapSlice';
@@ -35,7 +35,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const { viewport, isMapReady, userLocation, followUserLocation } = useAppSelector(state => state.map);
   const { isVisible: fogVisible } = useAppSelector(state => state.fog);
   const { exploredAreas } = useAppSelector(state => state.exploration);
-  
+
   const mapRef = useRef<Mapbox.MapView>(null);
   const cameraRef = useRef<Mapbox.Camera>(null);
   const fogService = getFogService();
@@ -43,7 +43,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const errorRecoveryService = getErrorRecoveryService();
   const [cloudSystemInitialized, setCloudSystemInitialized] = useState(false);
   const [cloudSystemError, setCloudSystemError] = useState<string | null>(null);
-  
+
   const [localMapState, setLocalMapState] = useState<MapContainerState>({
     mapReady: false,
     userLocation: null
@@ -51,20 +51,20 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const initializeMapbox = async () => {
       try {
         if (!isMounted) return;
-        
+
         dispatch(setMapLoading(true));
-        
+
         if (!validateMapboxConfig()) {
           if (!isMounted) return;
           dispatch(setMapError('Mapbox access token is not configured.'));
           Alert.alert('Configuration Error', 'Mapbox access token is not configured.');
           return;
         }
-        
+
         const savedViewport = await loadViewport();
         if (savedViewport && isMounted) {
           dispatch(updateViewport(savedViewport));
@@ -73,7 +73,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
         if (isMounted) {
           await initializeCloudSystem();
         }
-        
+
         if (isMounted) {
           setLocalMapState(prev => ({ ...prev, mapReady: true }));
         }
@@ -86,7 +86,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
     };
 
     initializeMapbox();
-    
+
     return () => {
       isMounted = false;
       if (cloudSystemInitialized) {
@@ -110,7 +110,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
           });
         }
       }, 100);
-      
+
       return () => clearTimeout(timeoutId);
     }
   }, [viewport.center, viewport.zoom, viewport.bearing, viewport.pitch, isMapReady]);
@@ -129,7 +129,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
         bearing: properties.bearing || viewport.bearing,
         pitch: properties.pitch || viewport.pitch,
       };
-      
+
       dispatch(updateViewport(newViewport));
       saveViewport(newViewport).catch(console.error);
 
@@ -141,26 +141,26 @@ const MapContainer: React.FC<MapContainerProps> = ({
       const mapBounds = await mapRef.current?.getVisibleBounds();
       if (mapBounds) {
         const queryBounds = {
-            minX: mapBounds[1][0], // minLng
-            minY: mapBounds[1][1], // minLat
-            maxX: mapBounds[0][0], // maxLng
-            maxY: mapBounds[0][1], // maxLat
+          minX: mapBounds[1][0], // minLng
+          minY: mapBounds[1][1], // minLat
+          maxX: mapBounds[0][0], // maxLng
+          maxY: mapBounds[0][1], // maxLat
         };
 
         const visibleAreaIds = spatialCacheService.search(queryBounds);
-        
+
         if (visibleAreaIds.length > 0) {
-            const areas = await databaseService.getAreasByIds(visibleAreaIds);
-            const explorationAreas = areas.map(area => ({
-                id: area.id!.toString(),
-                center: [area.longitude, area.latitude] as [number, number],
-                radius: area.radius,
-                exploredAt: new Date(area.explored_at).getTime(),
-                accuracy: area.accuracy,
-            }));
-            dispatch(setExploredAreas(explorationAreas));
+          const areas = await databaseService.getAreasByIds(visibleAreaIds);
+          const explorationAreas = areas.map(area => ({
+            id: area.id!.toString(),
+            center: [area.longitude, area.latitude] as [number, number],
+            radius: area.radius,
+            exploredAt: new Date(area.explored_at).getTime(),
+            accuracy: area.accuracy,
+          }));
+          dispatch(setExploredAreas(explorationAreas));
         } else {
-            dispatch(setExploredAreas([]));
+          dispatch(setExploredAreas([]));
         }
       }
     }
@@ -179,8 +179,21 @@ const MapContainer: React.FC<MapContainerProps> = ({
   };
 
   const handleUserLocationUpdate = useCallback((location: Mapbox.Location) => {
-    // ... (omitted for brevity, no changes here)
-  }, [userLocation, dispatch, onLocationUpdate, cloudSystemInitialized]);
+    if (location?.coords) {
+      const { longitude, latitude } = location.coords;
+      const newLocation: [number, number] = [longitude, latitude];
+
+      console.log('📍 User location updated:', newLocation);
+
+      // Dispatch user location to Redux state
+      dispatch(setUserLocation(newLocation));
+
+      // Call parent callback if provided
+      if (onLocationUpdate) {
+        onLocationUpdate(newLocation);
+      }
+    }
+  }, [dispatch, onLocationUpdate]);
 
   const updateCloudSystemBounds = useCallback((center?: [number, number]) => {
     // ... (omitted for brevity, no changes here)
@@ -208,7 +221,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
         onMapIdle={handleMapIdle}
         onMapLoadingError={handleMapError}
         styleURL={Mapbox.StyleURL.Street}
-        // ... other props
+      // ... other props
       >
         <Mapbox.Camera
           ref={cameraRef}
@@ -223,9 +236,23 @@ const MapContainer: React.FC<MapContainerProps> = ({
           minDisplacement={10}
           onUpdate={handleUserLocationUpdate}
         />
-        {isMapReady && fogVisible && (
+      </Mapbox.MapView>
+      {isMapReady && fogVisible && (() => {
+        // Include user's current location as an explored area for immediate fog clearing
+        const areasWithUserLocation = userLocation ? [
+          ...exploredAreas,
+          {
+            id: 'user_current_location',
+            center: userLocation as [number, number],
+            radius: 100, // 100 meters radius around user
+            exploredAt: Date.now(),
+            accuracy: 10,
+          }
+        ] : exploredAreas;
+
+        return (
           <SkiaFogOverlay
-            exploredAreas={exploredAreas}
+            exploredAreas={areasWithUserLocation}
             zoomLevel={viewport.zoom}
             viewport={{
               width: screenWidth,
@@ -240,8 +267,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
             enablePerformanceMonitoring={true}
             targetFPS={30}
           />
-        )}
-      </Mapbox.MapView>
+        );
+      })()}
     </View>
   );
 };

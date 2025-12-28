@@ -1,16 +1,16 @@
 import { store } from '../store';
-import { 
-  startFogClearingAnimation, 
+import {
+  startFogClearingAnimation,
   completeFogClearingAnimation,
   setFogGeometry,
   batchStartClearingAnimations,
   batchCompleteClearingAnimations,
   updateAnimationProgress
 } from '../store/slices/fogSlice';
-import { 
-  DissipationAnimator, 
+import {
+  DissipationAnimator,
   DissipationAnimationConfig,
-  AnimatedDissipation 
+  AnimatedDissipation
 } from './cloudSystem/animation/DissipationAnimator';
 import { GeographicArea } from '../types/fog';
 
@@ -31,7 +31,7 @@ export class FogDissipationService {
    * Integrates with Redux state and Skia animation system
    */
   startClearingAnimation(
-    center: [number, number], 
+    center: [number, number],
     radius: number,
     options: {
       duration?: number;
@@ -45,10 +45,10 @@ export class FogDissipationService {
     } = {}
   ): string {
     const animationId = `fog_clearing_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     // Calculate bounds if not provided
     const bounds = options.bounds || this.calculateBounds(center, radius);
-    
+
     // Create geographic area for Redux state
     const area: GeographicArea = {
       center,
@@ -77,13 +77,10 @@ export class FogDissipationService {
     const animation = this.dissipationAnimator.createAnimation(animationConfig);
     this.activeAnimationIds.add(animationId);
 
-    console.log('🌫️ Started fog clearing animation:', {
-      animationId,
-      center,
-      radius,
-      duration: animationConfig.duration,
-      easing: animationConfig.easing
-    });
+    // Only log in development and sparingly
+    if (__DEV__ && this.activeAnimationIds.size <= 3) {
+      console.log('🌫️ Started fog clearing animation at:', center);
+    }
 
     return animationId;
   }
@@ -95,11 +92,9 @@ export class FogDissipationService {
     if (this.activeAnimationIds.has(animationId)) {
       // Dispatch Redux action to complete animation
       store.dispatch(completeFogClearingAnimation(animationId));
-      
+
       // Remove from active animations
       this.activeAnimationIds.delete(animationId);
-
-      console.log('🌫️ Completed fog clearing animation:', animationId);
     }
   };
 
@@ -130,7 +125,7 @@ export class FogDissipationService {
     areas.forEach(areaConfig => {
       const animationId = `fog_clearing_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const bounds = areaConfig.bounds || this.calculateBounds(areaConfig.center, areaConfig.radius);
-      
+
       const area: GeographicArea = {
         center: areaConfig.center,
         radius: areaConfig.radius,
@@ -173,12 +168,12 @@ export class FogDissipationService {
     if (this.activeAnimationIds.has(animationId)) {
       // Cancel the Skia animation
       const cancelled = this.dissipationAnimator.cancelAnimation(animationId);
-      
+
       if (cancelled) {
         // Dispatch Redux action to complete animation (cleanup)
         store.dispatch(completeFogClearingAnimation(animationId));
         this.activeAnimationIds.delete(animationId);
-        
+
         console.log('🌫️ Cancelled fog clearing animation:', animationId);
         return true;
       }
@@ -205,17 +200,17 @@ export class FogDissipationService {
    */
   cancelAllAnimations(): void {
     const activeIds = Array.from(this.activeAnimationIds);
-    
+
     // Cancel all Skia animations
     this.dissipationAnimator.cancelAllAnimations();
-    
+
     // Clean up Redux state for each animation
     activeIds.forEach(animationId => {
       store.dispatch(completeFogClearingAnimation(animationId));
     });
-    
+
     this.activeAnimationIds.clear();
-    
+
     console.log('🌫️ Cancelled all fog clearing animations');
   }
 
@@ -230,8 +225,8 @@ export class FogDissipationService {
 
     // Check for animations that should be cancelled based on Redux state
     activeAnimations.forEach(animation => {
-      const matchingArea = reduxClearingAreas.find(area => 
-        area.center[0] === animation.center[0] && 
+      const matchingArea = reduxClearingAreas.find(area =>
+        area.center[0] === animation.center[0] &&
         area.center[1] === animation.center[1]
       );
 
@@ -245,7 +240,7 @@ export class FogDissipationService {
     // Check for new areas in Redux that don't have animations
     reduxClearingAreas.forEach(area => {
       const matchingAnimation = activeAnimations.find(animation =>
-        animation.center[0] === area.center[0] && 
+        animation.center[0] === area.center[0] &&
         animation.center[1] === area.center[1]
       );
 
@@ -270,7 +265,7 @@ export class FogDissipationService {
     // Convert radius from meters to approximate degrees
     // This is a rough approximation - 1 degree ≈ 111,000 meters at equator
     const radiusInDegrees = radius / 111000;
-    
+
     return {
       north: center[1] + radiusInDegrees,
       south: center[1] - radiusInDegrees,
@@ -289,7 +284,7 @@ export class FogDissipationService {
   } {
     const activeAnimations = this.dissipationAnimator.getActiveAnimations();
     const now = Date.now();
-    
+
     let totalDuration = 0;
     activeAnimations.forEach(animation => {
       totalDuration += (now - animation.startTime);
@@ -307,11 +302,11 @@ export class FogDissipationService {
    */
   cleanup(): void {
     this.dissipationAnimator.cleanup();
-    
+
     // Remove any stale animation IDs
     const activeAnimations = this.dissipationAnimator.getActiveAnimations();
     const activeSkiaIds = new Set(activeAnimations.map(anim => anim.id));
-    
+
     for (const id of this.activeAnimationIds) {
       if (!activeSkiaIds.has(id)) {
         this.activeAnimationIds.delete(id);

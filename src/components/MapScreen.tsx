@@ -1,21 +1,21 @@
 import React, { useEffect, useRef } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  Text, 
-  TouchableOpacity, 
+import {
+  View,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
   ActivityIndicator,
-  Alert 
+  Alert
 } from 'react-native';
 import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
-import { 
-  setUserLocation, 
-  setFollowUserLocation, 
+import {
+  setUserLocation,
+  setFollowUserLocation,
   centerOnLocation,
   setZoom,
-  resetViewport 
+  resetViewport
 } from '../store/slices/mapSlice';
 import { selectMapStatus, selectMapAndLocation } from '../store/selectors';
 import { fogLocationIntegrationService } from '../services';
@@ -33,14 +33,30 @@ const MapScreen: React.FC<MapScreenProps> = () => {
   // Initialize fog-location integration
   useEffect(() => {
     let isMounted = true;
-    
+    let retryTimeout: NodeJS.Timeout | null = null;
+
     const initializeIntegration = async () => {
       if (integrationStarted.current || !isMounted) return;
-      
+
+      // Import database service to check if ready
+      const { getDatabaseService } = await import('../database/services');
+      const dbService = getDatabaseService();
+
+      // Check if database is ready, if not, wait and retry
+      if (!dbService.isReady()) {
+        console.log('Database not ready yet, waiting to start fog-location integration...');
+        retryTimeout = setTimeout(() => {
+          if (isMounted) {
+            initializeIntegration();
+          }
+        }, 500); // Retry after 500ms
+        return;
+      }
+
       try {
         console.log('Initializing fog-location integration...');
         const success = await fogLocationIntegrationService.start();
-        
+
         if (success && isMounted) {
           integrationStarted.current = true;
           console.log('Fog-location integration started successfully');
@@ -59,6 +75,9 @@ const MapScreen: React.FC<MapScreenProps> = () => {
     // Cleanup on unmount
     return () => {
       isMounted = false;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
       if (integrationStarted.current) {
         fogLocationIntegrationService.stop();
         integrationStarted.current = false;
@@ -121,7 +140,7 @@ const MapScreen: React.FC<MapScreenProps> = () => {
           initialCenter={MAPBOX_CONFIG.DEFAULT_CENTER}
           initialZoom={MAPBOX_CONFIG.DEFAULT_ZOOM}
         />
-        
+
         {/* Show loading overlay while map is initializing */}
         {!isMapReady && (
           <View style={styles.loadingOverlay}>
@@ -132,20 +151,20 @@ const MapScreen: React.FC<MapScreenProps> = () => {
             </View>
           </View>
         )}
-        
+
         {/* Navigation Controls */}
         <View style={styles.controlsContainer}>
           {/* Zoom Controls */}
           <View style={styles.zoomControls}>
-            <TouchableOpacity 
-              style={styles.controlButton} 
+            <TouchableOpacity
+              style={styles.controlButton}
               onPress={handleZoomIn}
               accessibilityLabel="Zoom in"
             >
               <Text style={styles.controlButtonText}>+</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.controlButton} 
+            <TouchableOpacity
+              style={styles.controlButton}
               onPress={handleZoomOut}
               accessibilityLabel="Zoom out"
             >
@@ -155,12 +174,12 @@ const MapScreen: React.FC<MapScreenProps> = () => {
 
           {/* Location Controls */}
           <View style={styles.locationControls}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.controlButton, 
+                styles.controlButton,
                 styles.locationButton,
                 userLocation ? styles.locationButtonActive : styles.locationButtonInactive
-              ]} 
+              ]}
               onPress={handleCenterOnUser}
               accessibilityLabel="Center on current location"
             >

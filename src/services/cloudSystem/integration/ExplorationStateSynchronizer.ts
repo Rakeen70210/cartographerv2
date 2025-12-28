@@ -8,10 +8,10 @@ import { getFogService } from '../../fogService';
 import { ExploredArea } from '../../../database/services';
 import { ExplorationArea } from '../../../types/exploration';
 import { store } from '../../../store';
-import { 
+import {
   setExploredAreas,
   addExploredArea,
-  updateExplorationStats 
+  updateExplorationStats
 } from '../../../store/slices/explorationSlice';
 
 export interface SynchronizationConfig {
@@ -53,10 +53,10 @@ export class ExplorationStateSynchronizer {
   private constructor() {
     this.explorationService = ExplorationService.getInstance();
     this.fogService = getFogService();
-    
+
     this.config = {
       autoSync: true,
-      syncInterval: 10000, // 10 seconds
+      syncInterval: 60000, // 60 seconds (reduced frequency for better performance)
       batchSize: 50,
       enableConflictResolution: true,
       debugMode: false
@@ -130,17 +130,17 @@ export class ExplorationStateSynchronizer {
         this.getReduxAreas()
       ]);
 
-      this.log(`Retrieved ${databaseAreas.length} areas from database, ${reduxState.length} from Redux`);
+      // Verbose log removed for performance
 
       // Step 2: Detect conflicts
       const conflicts = this.detectConflicts(databaseAreas, reduxState);
-      this.log(`Detected ${conflicts.length} conflicts`);
+      // Verbose log removed for performance
 
       // Step 3: Resolve conflicts if enabled
       if (this.config.enableConflictResolution && conflicts.length > 0) {
         const resolved = await this.resolveConflicts(conflicts);
         conflictsResolved = resolved.length;
-        this.log(`Resolved ${conflictsResolved} conflicts`);
+        // Verbose log removed for performance
       }
 
       // Step 4: Sync database to Redux
@@ -153,8 +153,8 @@ export class ExplorationStateSynchronizer {
 
       this.lastSyncTime = Date.now();
       const duration = this.lastSyncTime - startTime;
-      
-      this.log(`Full sync completed in ${duration}ms: ${syncedCount} synced, ${conflictsResolved} conflicts resolved`);
+
+      // Verbose log removed for performance
 
       return {
         success: errors.length === 0,
@@ -204,7 +204,7 @@ export class ExplorationStateSynchronizer {
 
       // Update Redux store in batches
       const batches = this.createBatches(explorationAreas, this.config.batchSize);
-      
+
       for (const batch of batches) {
         try {
           // For the first batch, replace all areas; for subsequent batches, add them
@@ -215,9 +215,9 @@ export class ExplorationStateSynchronizer {
               store.dispatch(addExploredArea(area));
             });
           }
-          
+
           syncedCount += batch.length;
-          this.log(`Synced batch of ${batch.length} areas to Redux`);
+          // Verbose log removed for performance
 
         } catch (error) {
           const errorMessage = `Failed to sync batch: ${error}`;
@@ -240,6 +240,15 @@ export class ExplorationStateSynchronizer {
    */
   private async getDatabaseAreas(): Promise<ExploredArea[]> {
     try {
+      // Dynamic import to check database readiness
+      const { getDatabaseService } = await import('../../../database/services');
+      const dbService = getDatabaseService();
+
+      if (!dbService.isReady()) {
+        this.log('Database not ready, returning empty areas');
+        return [];
+      }
+
       return await this.explorationService.getAllExploredAreas();
     } catch (error) {
       console.error('Failed to get database areas:', error);
@@ -276,7 +285,7 @@ export class ExplorationStateSynchronizer {
     // Check for conflicts in areas that exist in both systems
     for (const [id, dbArea] of dbMap) {
       if (!id) continue;
-      
+
       const reduxArea = reduxMap.get(id);
       if (!reduxArea) {
         // Area exists in database but not in Redux
@@ -288,7 +297,7 @@ export class ExplorationStateSynchronizer {
       const dbLng = dbArea.longitude;
       const reduxLat = reduxArea.center[1];
       const reduxLng = reduxArea.center[0];
-      
+
       const positionDiff = Math.sqrt(
         Math.pow(dbLat - reduxLat, 2) + Math.pow(dbLng - reduxLng, 2)
       );
@@ -317,7 +326,7 @@ export class ExplorationStateSynchronizer {
       // Check for timestamp conflicts
       const dbTime = new Date(dbArea.explored_at).getTime();
       const reduxTime = reduxArea.exploredAt;
-      
+
       if (Math.abs(dbTime - reduxTime) > 60000) { // 1 minute difference
         conflicts.push({
           id,
@@ -350,7 +359,7 @@ export class ExplorationStateSynchronizer {
               exploredAt: new Date(conflict.databaseArea.explored_at).getTime(),
               accuracy: conflict.databaseArea.accuracy
             };
-            
+
             store.dispatch(addExploredArea(correctedArea));
             resolved.push(conflict);
             break;
@@ -380,13 +389,13 @@ export class ExplorationStateSynchronizer {
   private async updateExplorationStatistics(areas: ExploredArea[]): Promise<void> {
     try {
       const stats = await this.explorationService.getExplorationStats();
-      
+
       store.dispatch(updateExplorationStats({
         totalAreas: stats.totalAreas,
         totalDistance: stats.totalDistance,
         explorationPercentage: stats.explorationPercentage,
-        lastExploredAt: areas.length > 0 ? 
-          Math.max(...areas.map(a => new Date(a.explored_at).getTime())) : 
+        lastExploredAt: areas.length > 0 ?
+          Math.max(...areas.map(a => new Date(a.explored_at).getTime())) :
           0
       }));
 
@@ -471,12 +480,13 @@ export class ExplorationStateSynchronizer {
   }
 
   /**
-   * Debug logging
+   * Debug logging - DISABLED for performance
    */
   private log(message: string, data?: any): void {
-    if (this.config.debugMode) {
-      console.log(`[ExplorationStateSynchronizer] ${message}`, data || '');
-    }
+    // Logging disabled for performance - uncomment below for debugging
+    // if (this.config.debugMode) {
+    //   console.log(`[ExplorationStateSynchronizer] ${message}`, data || '');
+    // }
   }
 
   /**

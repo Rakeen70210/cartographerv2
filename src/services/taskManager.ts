@@ -34,7 +34,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 
   if (data) {
     const { locations } = data as { locations: Location.LocationObject[] };
-    
+
     try {
       // Process each location update
       const locationUpdates: LocationUpdate[] = locations
@@ -53,12 +53,12 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 
       // Add to processing queue
       await addToLocationQueue(locationUpdates);
-      
+
       // Attempt immediate processing if possible
       await processLocationQueue();
-      
+
       console.log(`Queued ${locationUpdates.length} background location updates`);
-      
+
     } catch (processingError) {
       console.error('Error processing background locations:', processingError);
       await updateSyncStatus({ failedCount: 1 });
@@ -70,7 +70,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 async function addToLocationQueue(locations: LocationUpdate[]): Promise<void> {
   try {
     const existingQueue = await getLocationQueue();
-    
+
     const queuedLocations: QueuedLocationUpdate[] = locations.map(location => ({
       ...location,
       id: `${location.timestamp}_${Math.random().toString(36).substr(2, 9)}`,
@@ -80,17 +80,17 @@ async function addToLocationQueue(locations: LocationUpdate[]): Promise<void> {
     }));
 
     const updatedQueue = [...existingQueue, ...queuedLocations];
-    
+
     // Keep queue size manageable (max 500 items)
     const trimmedQueue = updatedQueue.slice(-500);
-    
+
     await AsyncStorage.setItem(BACKGROUND_QUEUE_KEY, JSON.stringify(trimmedQueue));
-    
+
     // Update sync status
-    await updateSyncStatus({ 
-      pendingCount: trimmedQueue.filter(item => !item.processed).length 
+    await updateSyncStatus({
+      pendingCount: trimmedQueue.filter(item => !item.processed).length
     });
-    
+
   } catch (error) {
     console.error('Error adding to location queue:', error);
     throw error;
@@ -111,12 +111,19 @@ async function processLocationQueue(): Promise<void> {
   try {
     const queue = await getLocationQueue();
     const unprocessedItems = queue.filter(item => !item.processed && item.retryCount < 3);
-    
+
     if (unprocessedItems.length === 0) {
       return;
     }
 
     const databaseService = getDatabaseService();
+
+    // Check if database is ready before processing
+    if (!databaseService.isReady()) {
+      console.log('Database not ready, skipping background queue processing');
+      return;
+    }
+
     let processedCount = 0;
     let failedCount = 0;
 
@@ -124,12 +131,12 @@ async function processLocationQueue(): Promise<void> {
     const batchSize = 10;
     for (let i = 0; i < unprocessedItems.length; i += batchSize) {
       const batch = unprocessedItems.slice(i, i + batchSize);
-      
+
       for (const item of batch) {
         try {
           // Check if this location is significantly different from recent ones
           const shouldProcess = await shouldProcessLocation(item, databaseService);
-          
+
           if (shouldProcess) {
             // Create explored area in database
             await databaseService.createExploredArea({
@@ -140,11 +147,11 @@ async function processLocationQueue(): Promise<void> {
               accuracy: item.accuracy,
             });
           }
-          
+
           // Mark as processed
           item.processed = true;
           processedCount++;
-          
+
         } catch (error) {
           console.error(`Error processing queued location ${item.id}:`, error);
           item.retryCount++;
@@ -155,7 +162,7 @@ async function processLocationQueue(): Promise<void> {
 
     // Update queue with processed items
     await AsyncStorage.setItem(BACKGROUND_QUEUE_KEY, JSON.stringify(queue));
-    
+
     // Update sync status
     await updateSyncStatus({
       lastSyncAt: Date.now(),
@@ -163,9 +170,9 @@ async function processLocationQueue(): Promise<void> {
       failedCount,
       totalProcessed: processedCount,
     });
-    
+
     console.log(`Background queue processing: ${processedCount} processed, ${failedCount} failed`);
-    
+
   } catch (error) {
     console.error('Error processing location queue:', error);
     await updateSyncStatus({ failedCount: 1 });
@@ -173,7 +180,7 @@ async function processLocationQueue(): Promise<void> {
 }
 
 async function shouldProcessLocation(
-  location: QueuedLocationUpdate, 
+  location: QueuedLocationUpdate,
   databaseService: any
 ): Promise<boolean> {
   try {
@@ -191,12 +198,12 @@ async function shouldProcessLocation(
 
     // If we have a recent area within 100m, skip this location
     const recentThreshold = Date.now() - (30 * 60 * 1000); // 30 minutes
-    const hasRecentNearby = nearbyAreas.some((area: any) => 
+    const hasRecentNearby = nearbyAreas.some((area: any) =>
       new Date(area.explored_at).getTime() > recentThreshold
     );
 
     return !hasRecentNearby;
-    
+
   } catch (error) {
     console.error('Error checking if location should be processed:', error);
     // Default to processing if we can't determine
@@ -214,7 +221,7 @@ async function updateSyncStatus(updates: Partial<BackgroundSyncStatus>): Promise
       failedCount: currentStatus.failedCount + (updates.failedCount || 0),
       totalProcessed: currentStatus.totalProcessed + (updates.totalProcessed || 0),
     };
-    
+
     await AsyncStorage.setItem(BACKGROUND_SYNC_STATUS_KEY, JSON.stringify(updatedStatus));
   } catch (error) {
     console.error('Error updating sync status:', error);
@@ -275,7 +282,7 @@ export async function processBackgroundLocations(): Promise<{
   try {
     // Process any pending items in the queue
     await processLocationQueue();
-    
+
     // Get legacy stored locations for backward compatibility
     const legacyLocations = await getStoredBackgroundLocations();
     if (legacyLocations.length > 0) {
@@ -283,7 +290,7 @@ export async function processBackgroundLocations(): Promise<{
       await AsyncStorage.removeItem(BACKGROUND_LOCATIONS_KEY);
       await processLocationQueue();
     }
-    
+
     // Get processed locations from queue
     const queue = await getLocationQueue();
     const processedLocations = queue
@@ -294,21 +301,21 @@ export async function processBackgroundLocations(): Promise<{
         accuracy: item.accuracy,
         timestamp: item.timestamp,
       }));
-    
+
     // Clean up old processed items (keep last 50)
     const cleanedQueue = queue
       .filter(item => !item.processed || queue.indexOf(item) >= queue.length - 50);
     await AsyncStorage.setItem(BACKGROUND_QUEUE_KEY, JSON.stringify(cleanedQueue));
-    
+
     const status = await getSyncStatus();
-    
+
     console.log(`Retrieved ${processedLocations.length} processed background locations`);
-    
+
     return {
       processed: processedLocations,
       status,
     };
-    
+
   } catch (error) {
     console.error('Error processing background locations:', error);
     return {
@@ -329,7 +336,7 @@ export async function getBackgroundQueueStatus(): Promise<{
   try {
     const queue = await getLocationQueue();
     const syncStatus = await getSyncStatus();
-    
+
     return {
       queueSize: queue.length,
       pendingCount: queue.filter(item => !item.processed).length,

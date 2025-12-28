@@ -12,10 +12,10 @@ import { getMockCloudRenderingEngine } from '../MockCloudRenderingEngine';
 import { ExploredArea } from '../../../database/services';
 import { LocationUpdate } from '../../../types';
 import { store } from '../../../store';
-import { 
+import {
   setCloudSystemEnabled,
   setCloudSystemError,
-  updateCloudState 
+  updateCloudState
 } from '../../../store/slices/fogSlice';
 
 export interface CloudFogIntegrationConfig {
@@ -52,7 +52,7 @@ export class CloudFogIntegration {
   private constructor() {
     this.explorationService = ExplorationService.getInstance();
     this.fogService = getFogService();
-    
+
     this.config = {
       enableCloudSystem: true,
       fallbackToTraditionalFog: true,
@@ -87,6 +87,16 @@ export class CloudFogIntegration {
     try {
       this.log('Initializing CloudFogIntegration...');
 
+      // Dynamic import to check database readiness
+      const { getDatabaseService } = await import('../../../database/services');
+      const dbService = getDatabaseService();
+
+      if (!dbService.isReady()) {
+        this.log('Database not ready, deferring CloudFogIntegration initialization');
+        // We'll retry later when startCloudSystem is called or just leave it for now
+        return;
+      }
+
       // Set up exploration event listeners
       this.explorationService.addExplorationListener(this.handleExplorationResult.bind(this));
 
@@ -113,7 +123,7 @@ export class CloudFogIntegration {
     try {
       // Ensure fog location integration service is running
       const integrationStatus = await fogLocationIntegrationService.getStatus();
-      
+
       if (!integrationStatus.isActive) {
         this.log('Starting fog location integration service for backward compatibility');
         await fogLocationIntegrationService.start();
@@ -135,7 +145,7 @@ export class CloudFogIntegration {
   public setCloudRenderingEngine(engine: ICloudRenderingEngine): void {
     this.cloudRenderingEngine = engine;
     this.log('Cloud rendering engine set');
-    
+
     if (this.config.enableCloudSystem) {
       this.startCloudSystem();
     }
@@ -174,13 +184,13 @@ export class CloudFogIntegration {
     } catch (error) {
       console.error('Failed to start cloud system:', error);
       this.handleError(error as Error, 'startup');
-      
+
       // Fallback to traditional fog if enabled
       if (this.config.fallbackToTraditionalFog) {
         this.log('Falling back to traditional fog system');
         return this.fallbackToTraditionalFog();
       }
-      
+
       return false;
     }
   }
@@ -345,7 +355,7 @@ export class CloudFogIntegration {
 
       // Ensure fog location integration is running
       const integrationStatus = await fogLocationIntegrationService.getStatus();
-      
+
       if (!integrationStatus.isActive) {
         await fogLocationIntegrationService.start();
       }
@@ -378,7 +388,7 @@ export class CloudFogIntegration {
     if (this.shouldRetry(context) && this.retryCount < this.config.maxRetryAttempts) {
       this.retryCount++;
       this.log(`Retrying ${context} (attempt ${this.retryCount}/${this.config.maxRetryAttempts})`);
-      
+
       setTimeout(() => {
         this.retryOperation(context);
       }, 1000 * this.retryCount); // Exponential backoff
@@ -414,12 +424,12 @@ export class CloudFogIntegration {
           // This would be handled by the next exploration event
           break;
       }
-      
+
       // Reset retry count on success
       this.retryCount = 0;
       this.status.hasError = false;
       this.status.errorMessage = undefined;
-      
+
     } catch (error) {
       this.handleError(error as Error, context);
     }
@@ -515,7 +525,7 @@ export class CloudFogIntegration {
    */
   public dispose(): void {
     this.stopSynchronization();
-    
+
     if (this.cloudRenderingEngine) {
       this.cloudRenderingEngine.dispose();
     }

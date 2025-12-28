@@ -1,4 +1,4 @@
-import { Skia, SkPath, SkPaint, SkCanvas } from '@shopify/react-native-skia';
+import { Skia, SkPath, SkPaint, SkCanvas, PathOp } from '@shopify/react-native-skia';
 import { GenericExploredArea } from '../../../types/fog';
 import { SkiaFogViewport, DissipationAnimation } from '../../../types/skiaFog';
 import { ExplorationMaskManager } from './ExplorationMaskManager';
@@ -118,13 +118,13 @@ export class FogMaskingSystem {
     }
 
     const path = Skia.Path.Make();
-    
+
     for (const animation of animations) {
       const screenCoords = this.convertAnimationToScreenCoords(animation, viewport);
       if (screenCoords) {
         const circlePath = Skia.Path.Make();
         circlePath.addCircle(screenCoords.x, screenCoords.y, screenCoords.radius);
-        path.op(circlePath, Skia.PathOp.Union);
+        path.op(circlePath, PathOp.Union);
       }
     }
 
@@ -139,7 +139,7 @@ export class FogMaskingSystem {
     viewport: SkiaFogViewport
   ): { x: number; y: number; radius: number } | null {
     const [lng, lat] = animation.center;
-    
+
     // Check if animation is within viewport
     if (!this.isWithinViewport(lat, lng, viewport)) {
       return null;
@@ -148,7 +148,7 @@ export class FogMaskingSystem {
     // Convert to screen coordinates
     const x = this.longitudeToScreenX(lng, viewport);
     const y = this.latitudeToScreenY(lat, viewport);
-    const radius = animation.radius.value;
+    const radius = animation.radius;
 
     return { x, y, radius };
   }
@@ -162,8 +162,8 @@ export class FogMaskingSystem {
     }
 
     const combinedPath = Skia.Path.MakeFromSVGString(exploredPath.toSVGString()) || exploredPath;
-    combinedPath.op(dissipationPath, Skia.PathOp.Union);
-    
+    combinedPath.op(dissipationPath, PathOp.Union);
+
     return combinedPath;
   }
 
@@ -235,18 +235,18 @@ export class FogMaskingSystem {
    */
   public validateConfig(): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     // Validate blur configuration
     const blurValidation = this.blurMaskManager.validateConfig(this.config.blurConfig);
     if (!blurValidation.valid) {
       errors.push(...blurValidation.errors);
     }
-    
+
     // Validate layer count
     if (this.config.layerCount < 1 || this.config.layerCount > 5) {
       errors.push('Layer count must be between 1 and 5');
     }
-    
+
     return {
       valid: errors.length === 0,
       errors
@@ -256,10 +256,10 @@ export class FogMaskingSystem {
   // Helper methods (duplicated from ExplorationMaskManager for internal use)
   private isWithinViewport(lat: number, lng: number, viewport: SkiaFogViewport): boolean {
     const { bounds } = viewport;
-    return lat >= bounds.south && 
-           lat <= bounds.north && 
-           lng >= bounds.west && 
-           lng <= bounds.east;
+    return lat >= bounds.south &&
+      lat <= bounds.north &&
+      lng >= bounds.west &&
+      lng <= bounds.east;
   }
 
   private longitudeToScreenX(lng: number, viewport: SkiaFogViewport): number {

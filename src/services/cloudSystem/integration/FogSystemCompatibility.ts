@@ -40,7 +40,7 @@ export class FogSystemCompatibility {
 
   private constructor() {
     this.fogService = getFogService();
-    
+
     this.config = {
       enableFallback: true,
       preferCloudSystem: true,
@@ -73,6 +73,15 @@ export class FogSystemCompatibility {
   private async initializeCompatibility(): Promise<void> {
     try {
       this.log('Initializing fog system compatibility...');
+
+      // Dynamic import to check database readiness
+      const { getDatabaseService } = await import('../../../database/services');
+      const dbService = getDatabaseService();
+
+      if (!dbService.isReady()) {
+        this.log('Database not ready, deferring FogSystemCompatibility initialization');
+        return;
+      }
 
       // Ensure traditional fog system is running
       await this.ensureTraditionalFogActive();
@@ -129,7 +138,7 @@ export class FogSystemCompatibility {
 
     } catch (error) {
       console.error('Failed to activate cloud system:', error);
-      
+
       // Fallback to traditional fog
       await this.fallbackToTraditionalFog();
       return false;
@@ -165,9 +174,16 @@ export class FogSystemCompatibility {
    */
   private async ensureTraditionalFogActive(): Promise<void> {
     try {
+      // Check if database is ready before starting integration
+      const { getDatabaseService } = await import('../../../database/services');
+      if (!getDatabaseService().isReady()) {
+        this.log('Database not ready, cannot ensure traditional fog active');
+        return;
+      }
+
       // Check if fog location integration is running
       const integrationStatus = await fogLocationIntegrationService.getStatus();
-      
+
       if (!integrationStatus.isActive) {
         this.log('Starting traditional fog system...');
         await fogLocationIntegrationService.start();
@@ -268,20 +284,20 @@ export class FogSystemCompatibility {
    */
   private async handlePerformanceSwitch(performanceScore: number): Promise<void> {
     // If performance drops below threshold and cloud system is active
-    if (performanceScore < this.config.fallbackThreshold && 
-        this.status.cloudSystemActive && 
-        this.config.enableFallback) {
-      
+    if (performanceScore < this.config.fallbackThreshold &&
+      this.status.cloudSystemActive &&
+      this.config.enableFallback) {
+
       this.log(`Performance below threshold (${performanceScore}), falling back to traditional fog`);
       await this.fallbackToTraditionalFog();
     }
-    
+
     // If performance improves and we're using traditional fog, try cloud system again
-    else if (performanceScore > this.config.fallbackThreshold + 10 && 
-             !this.status.cloudSystemActive && 
-             this.config.preferCloudSystem &&
-             this.cloudRenderingEngine) {
-      
+    else if (performanceScore > this.config.fallbackThreshold + 10 &&
+      !this.status.cloudSystemActive &&
+      this.config.preferCloudSystem &&
+      this.cloudRenderingEngine) {
+
       // Don't switch back too quickly
       const timeSinceLastFallback = Date.now() - this.status.lastFallbackTime;
       if (timeSinceLastFallback > 30000) { // 30 seconds
@@ -332,7 +348,7 @@ export class FogSystemCompatibility {
     // This is a simplified performance estimation
     // In a real implementation, this would measure actual frame rates,
     // memory usage, and other performance metrics
-    
+
     // For now, return a random value that simulates performance fluctuation
     const basePerformance = 60;
     const variation = (Math.random() - 0.5) * 20; // ±10 FPS variation
@@ -428,7 +444,7 @@ export class FogSystemCompatibility {
    */
   public dispose(): void {
     this.stopPerformanceMonitoring();
-    
+
     if (this.cloudRenderingEngine) {
       this.cloudRenderingEngine.dispose();
     }

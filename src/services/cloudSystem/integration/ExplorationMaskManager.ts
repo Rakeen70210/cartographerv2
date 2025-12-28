@@ -1,4 +1,4 @@
-import { Skia, SkPath, BlurStyle, BlendMode } from '@shopify/react-native-skia';
+import { Skia, SkPath, BlurStyle, BlendMode, PathOp } from '@shopify/react-native-skia';
 import { GenericExploredArea } from '../../../types/fog';
 import { SkiaFogViewport } from '../../../types/skiaFog';
 
@@ -19,22 +19,22 @@ export class ExplorationMaskManager {
   ): SkPath {
     const areasHash = this.hashExploredAreas(exploredAreas);
     const viewportHash = this.hashViewport(viewport);
-    
+
     // Return cached path if nothing changed
-    if (this.cachedPath && 
-        areasHash === this.lastAreasHash && 
-        viewportHash === this.lastViewportHash) {
+    if (this.cachedPath &&
+      areasHash === this.lastAreasHash &&
+      viewportHash === this.lastViewportHash) {
       return this.cachedPath;
     }
 
     // Generate new path
     const path = this.createPathFromAreas(exploredAreas, viewport);
-    
+
     // Cache the result
     this.cachedPath = path;
     this.lastAreasHash = areasHash;
     this.lastViewportHash = viewportHash;
-    
+
     return path;
   }
 
@@ -46,7 +46,7 @@ export class ExplorationMaskManager {
     viewport: SkiaFogViewport
   ): SkPath {
     const path = Skia.Path.Make();
-    
+
     if (exploredAreas.length === 0) {
       return path;
     }
@@ -57,9 +57,9 @@ export class ExplorationMaskManager {
       if (screenCoords) {
         const circlePath = Skia.Path.Make();
         circlePath.addCircle(screenCoords.x, screenCoords.y, screenCoords.radius);
-        
+
         // Union with main path for efficient combining
-        path.op(circlePath, Skia.PathOp.Union);
+        path.op(circlePath, PathOp.Union);
       }
     }
 
@@ -75,7 +75,7 @@ export class ExplorationMaskManager {
   ): { x: number; y: number; radius: number } | null {
     // Extract coordinates from different possible formats
     let lat: number, lng: number;
-    
+
     if (area.center) {
       [lng, lat] = area.center; // GeoJSON format [lng, lat]
     } else if (area.latitude !== undefined && area.longitude !== undefined) {
@@ -94,10 +94,10 @@ export class ExplorationMaskManager {
     // Convert to screen coordinates
     const x = this.longitudeToScreenX(lng, viewport);
     const y = this.latitudeToScreenY(lat, viewport);
-    
+
     // Convert radius from meters to screen pixels
     const radiusInPixels = this.metersToScreenPixels(area.radius, lat, viewport);
-    
+
     return { x, y, radius: radiusInPixels };
   }
 
@@ -106,10 +106,10 @@ export class ExplorationMaskManager {
    */
   private isWithinViewport(lat: number, lng: number, viewport: SkiaFogViewport): boolean {
     const { bounds } = viewport;
-    return lat >= bounds.south && 
-           lat <= bounds.north && 
-           lng >= bounds.west && 
-           lng <= bounds.east;
+    return lat >= bounds.south &&
+      lat <= bounds.north &&
+      lng >= bounds.west &&
+      lng <= bounds.east;
   }
 
   /**
@@ -139,19 +139,19 @@ export class ExplorationMaskManager {
     // Approximate conversion: 1 degree latitude ≈ 111,320 meters
     const metersPerDegreeLat = 111320;
     const metersPerDegreeLng = metersPerDegreeLat * Math.cos(lat * Math.PI / 180);
-    
+
     // Convert meters to degrees
     const radiusInDegreesLat = meters / metersPerDegreeLat;
     const radiusInDegreesLng = meters / metersPerDegreeLng;
-    
+
     // Use the smaller of the two to maintain circular appearance
     const radiusInDegrees = Math.min(radiusInDegreesLat, radiusInDegreesLng);
-    
+
     // Convert to screen pixels
     const { bounds, height } = viewport;
     const latRange = bounds.north - bounds.south;
     const pixelsPerDegree = height / latRange;
-    
+
     return radiusInDegrees * pixelsPerDegree;
   }
 
@@ -160,14 +160,14 @@ export class ExplorationMaskManager {
    */
   private hashExploredAreas(areas: GenericExploredArea[]): string {
     if (areas.length === 0) return 'empty';
-    
+
     // Create a simple hash based on area count and first/last area properties
     const firstArea = areas[0];
     const lastArea = areas[areas.length - 1];
-    
+
     const firstCoords = firstArea.center || [firstArea.longitude, firstArea.latitude];
     const lastCoords = lastArea.center || [lastArea.longitude, lastArea.latitude];
-    
+
     return `${areas.length}_${firstCoords?.[0]}_${firstCoords?.[1]}_${firstArea.radius}_${lastCoords?.[0]}_${lastCoords?.[1]}_${lastArea.radius}`;
   }
 

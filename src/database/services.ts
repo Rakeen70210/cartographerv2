@@ -43,8 +43,35 @@ export class DatabaseService {
     // Don't initialize database in constructor to avoid circular dependency
   }
 
+  /**
+   * Check if the database manager is initialized and ready
+   */
+  isReady(): boolean {
+    try {
+      const manager = getDatabaseManager();
+      const ready = manager.isInitialized();
+      if (!ready) {
+        // console.log('DatabaseService: holds no database instance yet');
+      }
+      return ready;
+    } catch (error) {
+      console.error('DatabaseService: Error in isReady check:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Ensure database is ready, throwing a helpful error if not
+   */
+  private ensureReady(): void {
+    if (!this.isReady()) {
+      throw new Error('Database not initialized. Call initialize() first.');
+    }
+  }
+
   private get db(): SQLite.SQLiteDatabase {
     if (!this._db) {
+      this.ensureReady();
       this._db = getDatabaseManager().getDatabase();
     }
     return this._db;
@@ -154,7 +181,7 @@ export class DatabaseService {
         })
         .filter(area => area.distance <= query.radius)
         .sort((a, b) => a.distance - b.distance);
-      
+
       return filteredResults;
     } catch (error) {
       console.error('Failed to find nearby explored areas:', error);
@@ -192,7 +219,7 @@ export class DatabaseService {
     try {
       const updateFields = Object.keys(stats).map(key => `${key} = ?`).join(', ');
       const values = Object.values(stats);
-      
+
       await this.db.runAsync(
         `UPDATE user_stats SET ${updateFields}, updated_at = CURRENT_TIMESTAMP WHERE id = 1`,
         values
@@ -271,10 +298,10 @@ export class DatabaseService {
       const result = await this.db.getFirstAsync<{ integrity_check: string }>(
         'PRAGMA integrity_check'
       );
-      
+
       const isValid = result?.integrity_check === 'ok';
       const issues = isValid ? [] : [result?.integrity_check || 'Unknown integrity issue'];
-      
+
       return { isValid, issues };
     } catch (error) {
       console.error('Integrity check failed:', error);
@@ -306,11 +333,11 @@ export class DatabaseService {
       const tables = await this.db.getAllAsync<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type='table'"
       );
-      
+
       const expectedTables = ['explored_areas', 'user_stats', 'achievements'];
       const existingTables = tables.map(t => t.name);
       const missingTables = expectedTables.filter(table => !existingTables.includes(table));
-      
+
       if (missingTables.length > 0) {
         return { isCorrupted: true, corruptionType: 'schema' };
       }
@@ -331,10 +358,10 @@ export class DatabaseService {
   async repairDatabase(): Promise<boolean> {
     try {
       console.log('Starting database repair...');
-      
+
       // First, check what type of corruption we're dealing with
       const { isCorrupted, corruptionType } = await this.checkDatabaseCorruption();
-      
+
       if (!isCorrupted) {
         console.log('Database is not corrupted, no repair needed');
         return true;
@@ -363,7 +390,7 @@ export class DatabaseService {
   async runMigrations(): Promise<boolean> {
     try {
       console.log('Running database migrations...');
-      
+
       // Get current schema version
       let currentVersion = 0;
       try {
@@ -443,18 +470,21 @@ export class DatabaseService {
   async reinitialize(): Promise<boolean> {
     try {
       console.log('Reinitializing database...');
-      
-      // Close current connection
-      await this.db.closeAsync();
-      
+
+      // Close current connection if we have one
+      if (this._db) {
+        await this._db.closeAsync();
+        this._db = null;
+      }
+
       // Get a fresh database instance
       const databaseManager = getDatabaseManager();
       await databaseManager.reinitialize();
-      this.db = databaseManager.getDatabase();
-      
+      // _db will be re-fetched on next access via the getter
+
       // Run migrations to ensure proper schema
       const migrationSuccess = await this.runMigrations();
-      
+
       if (migrationSuccess) {
         console.log('Database reinitialization successful');
         return true;
@@ -472,17 +502,17 @@ export class DatabaseService {
   private async repairStructuralCorruption(): Promise<boolean> {
     try {
       console.log('Attempting structural corruption repair...');
-      
+
       // Try VACUUM to rebuild the database file
       await this.db.execAsync('VACUUM');
-      
+
       // Verify repair
       const isRepaired = await this.performQuickCheck();
       if (isRepaired) {
         console.log('Structural corruption repair successful');
         return true;
       }
-      
+
       // If VACUUM failed, try reinitialization
       return this.reinitialize();
     } catch (error) {
@@ -494,7 +524,7 @@ export class DatabaseService {
   private async repairSchemaCorruption(): Promise<boolean> {
     try {
       console.log('Attempting schema corruption repair...');
-      
+
       // Run migrations to recreate missing tables
       return this.runMigrations();
     } catch (error) {
@@ -506,7 +536,7 @@ export class DatabaseService {
   private async repairDataCorruption(): Promise<boolean> {
     try {
       console.log('Attempting data corruption repair...');
-      
+
       // Try to salvage data by exporting what we can
       let salvageableData = null;
       try {
@@ -514,11 +544,11 @@ export class DatabaseService {
       } catch (error) {
         console.warn('Could not salvage data:', error);
       }
-      
+
       // Reinitialize database
       const reinitSuccess = await this.reinitialize();
       if (!reinitSuccess) return false;
-      
+
       // Import salvaged data if available
       if (salvageableData) {
         try {
@@ -528,7 +558,7 @@ export class DatabaseService {
           console.warn('Could not import salvaged data:', error);
         }
       }
-      
+
       return true;
     } catch (error) {
       console.error('Data repair failed:', error);
@@ -539,7 +569,7 @@ export class DatabaseService {
   private async repairAccessCorruption(): Promise<boolean> {
     try {
       console.log('Attempting access corruption repair...');
-      
+
       // This typically requires full reinitialization
       return this.reinitialize();
     } catch (error) {
@@ -551,18 +581,18 @@ export class DatabaseService {
   private async performGenericRepair(): Promise<boolean> {
     try {
       console.log('Attempting generic database repair...');
-      
+
       // Try standard repair operations
       await this.db.execAsync('VACUUM');
       await this.db.execAsync('REINDEX');
-      
+
       // Verify repair was successful
       const { isValid } = await this.performIntegrityCheck();
       if (isValid) {
         console.log('Generic repair successful');
         return true;
       }
-      
+
       // If standard repair failed, try reinitialization
       return this.reinitialize();
     } catch (error) {
@@ -679,18 +709,18 @@ export class DatabaseService {
         // Clear existing data
         await this.db.execAsync('DELETE FROM explored_areas');
         await this.db.execAsync('DELETE FROM achievements');
-        
+
         // Import explored areas
         for (const area of data.exploredAreas) {
           await this.createExploredArea(area);
         }
-        
+
         // Import user stats
         if (data.userStats) {
           const { id, ...stats } = data.userStats;
           await this.updateUserStats(stats);
         }
-        
+
         // Import achievements
         for (const achievement of data.achievements) {
           await this.createAchievement(achievement);
@@ -725,7 +755,7 @@ export class DatabaseService {
     try {
       // Try to repair first
       const repairSuccess = await this.repairDatabase();
-      
+
       if (repairSuccess) {
         return { success: true, message: 'Database repaired successfully' };
       }
@@ -734,7 +764,7 @@ export class DatabaseService {
       const salvageableData = await this.exportSalvageableData();
       await this.reinitialize();
       await this.importSalvagedData(salvageableData);
-      
+
       return { success: true, message: 'Database recovered with salvaged data' };
     } catch (error) {
       console.error('Database recovery failed:', error);
@@ -782,7 +812,7 @@ export class DatabaseService {
     const R = 6371; // Earth's radius in kilometers
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
+    const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
