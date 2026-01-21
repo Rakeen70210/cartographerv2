@@ -64,6 +64,7 @@ export class FogDissipationService {
 
     // Create Skia animation configuration
     const animationConfig: DissipationAnimationConfig = {
+      id: animationId,
       center,
       maxRadius: radius,
       duration: options.duration || 2500, // Default 2.5 seconds
@@ -137,6 +138,7 @@ export class FogDissipationService {
 
       // Create Skia animation
       const animationConfig: DissipationAnimationConfig = {
+        id: animationId,
         center: areaConfig.center,
         maxRadius: areaConfig.radius,
         duration: areaConfig.duration || 2500,

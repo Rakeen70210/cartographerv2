@@ -39,6 +39,11 @@ export class OfflineService {
   private offlineQueue: OfflineQueueItem[] = [];
   private cache: Map<string, CacheEntry> = new Map();
   private databaseService = getDatabaseService();
+  private isProcessingQueue = false;
+  private queueRetryTimeout: NodeJS.Timeout | null = null;
+  private queueRetryAttempts = 0;
+  private readonly queueRetryIntervalMs = 2000;
+  private readonly maxQueueRetryAttempts = 30;
   
   private readonly CACHE_DIR = `${FileSystem.documentDirectory}cache/`;
   private readonly OFFLINE_QUEUE_FILE = `${FileSystem.documentDirectory}offline_queue.json`;
@@ -75,9 +80,15 @@ export class OfflineService {
       
       // Load cache index
       await this.loadCacheIndex();
+
+      // Initialize network state before listening for changes
+      await this.initializeNetworkState();
       
       // Start network monitoring
       this.startNetworkMonitoring();
+
+      // Process any queued items if we're already online
+      await this.attemptProcessOfflineQueue('startup');
       
       console.log('Offline service initialized');
     } catch (error) {
@@ -121,11 +132,72 @@ export class OfflineService {
 
       // Process offline queue when coming back online
       if (wasOffline && isNowOnline) {
-        this.processOfflineQueue();
+        this.attemptProcessOfflineQueue('online');
       }
 
       console.log('Network state changed:', networkState);
     });
+  }
+
+  /**
+   * Initialize network state so we can process offline queue on startup
+   */
+  private async initializeNetworkState(): Promise<void> {
+    try {
+      const state = await NetInfo.fetch();
+      this.networkState = {
+        isConnected: state.isConnected ?? false,
+        isInternetReachable: state.isInternetReachable,
+        type: state.type,
+        details: state.details
+      };
+    } catch (error) {
+      console.error('Failed to initialize network state:', error);
+    }
+  }
+
+  /**
+   * Attempt to process offline queue when online and database is ready
+   */
+  private async attemptProcessOfflineQueue(context: string): Promise<void> {
+    if (this.offlineQueue.length === 0) {
+      this.queueRetryAttempts = 0;
+      return;
+    }
+
+    if (!this.isOnline()) {
+      return;
+    }
+
+    if (!this.databaseService.isReady()) {
+      this.scheduleQueueRetry(`database_not_ready_${context}`);
+      return;
+    }
+
+    await this.processOfflineQueue();
+    this.queueRetryAttempts = 0;
+  }
+
+  /**
+   * Schedule a retry for offline queue processing
+   */
+  private scheduleQueueRetry(reason: string): void {
+    if (this.queueRetryTimeout || this.offlineQueue.length === 0) {
+      return;
+    }
+
+    if (this.queueRetryAttempts >= this.maxQueueRetryAttempts) {
+      console.warn(`Offline queue retry limit reached (${reason})`);
+      return;
+    }
+
+    this.queueRetryAttempts += 1;
+    this.queueRetryTimeout = setTimeout(() => {
+      this.queueRetryTimeout = null;
+      this.attemptProcessOfflineQueue(`retry_${this.queueRetryAttempts}`).catch(error => {
+        console.error('Retrying offline queue processing failed:', error);
+      });
+    }, this.queueRetryIntervalMs);
   }
 
   /**
@@ -189,37 +261,52 @@ export class OfflineService {
    * Process offline queue when online
    */
   private async processOfflineQueue(): Promise<void> {
-    if (this.offlineQueue.length === 0) {
+    if (this.isProcessingQueue) {
       return;
     }
 
-    console.log(`Processing ${this.offlineQueue.length} items from offline queue`);
-
-    const itemsToProcess = [...this.offlineQueue];
-    const processedItems: string[] = [];
-
-    for (const item of itemsToProcess) {
-      try {
-        await this.processOfflineQueueItem(item);
-        processedItems.push(item.id);
-        console.log(`Processed offline queue item: ${item.type}`);
-      } catch (error) {
-        console.error(`Failed to process offline queue item ${item.id}:`, error);
-        
-        // Increment retry count
-        item.retryCount++;
-        
-        // Remove item if max retries reached
-        if (item.retryCount >= 3) {
-          processedItems.push(item.id);
-          console.log(`Removing failed offline queue item after max retries: ${item.id}`);
-        }
-      }
+    if (!this.databaseService.isReady()) {
+      this.scheduleQueueRetry('database_not_ready');
+      return;
     }
 
-    // Remove processed items from queue
-    this.offlineQueue = this.offlineQueue.filter(item => !processedItems.includes(item.id));
-    await this.saveOfflineQueue();
+    this.isProcessingQueue = true;
+
+    try {
+      if (this.offlineQueue.length === 0) {
+        return;
+      }
+
+      console.log(`Processing ${this.offlineQueue.length} items from offline queue`);
+
+      const itemsToProcess = [...this.offlineQueue];
+      const processedItems: string[] = [];
+
+      for (const item of itemsToProcess) {
+        try {
+          await this.processOfflineQueueItem(item);
+          processedItems.push(item.id);
+          console.log(`Processed offline queue item: ${item.type}`);
+        } catch (error) {
+          console.error(`Failed to process offline queue item ${item.id}:`, error);
+          
+          // Increment retry count
+          item.retryCount++;
+          
+          // Remove item if max retries reached
+          if (item.retryCount >= 3) {
+            processedItems.push(item.id);
+            console.log(`Removing failed offline queue item after max retries: ${item.id}`);
+          }
+        }
+      }
+
+      // Remove processed items from queue
+      this.offlineQueue = this.offlineQueue.filter(item => !processedItems.includes(item.id));
+      await this.saveOfflineQueue();
+    } finally {
+      this.isProcessingQueue = false;
+    }
   }
 
   /**

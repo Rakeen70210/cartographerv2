@@ -14,6 +14,7 @@ import { SkiaPerformanceMetrics, SkiaQualitySettings } from '../services/cloudSy
 import { WindSystem, createWindSystem } from '../services/cloudSystem/wind';
 
 // Utility function to normalize explored areas from different sources
+let normalizedAreaIdCounter = 0;
 const normalizeExploredArea = (area: GenericExploredArea): {
   id: string;
   latitude: number;
@@ -37,7 +38,7 @@ const normalizeExploredArea = (area: GenericExploredArea): {
   }
 
   return {
-    id: area.id?.toString() ?? `area_${latitude}_${longitude}_${exploredAt}`,
+    id: area.id?.toString() ?? `area_${latitude}_${longitude}_${exploredAt}_${normalizedAreaIdCounter++}`,
     latitude,
     longitude,
     radius: area.radius,

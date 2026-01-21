@@ -15,6 +15,12 @@ export class CloudSettingsManager implements ICloudSettingsManager {
   private listeners: Set<(settings: CloudSettings) => void> = new Set();
   private validator = getSettingsValidator();
   private performanceMode: PerformanceMode = 'medium';
+  private readonly defaultWind: WindConfig = {
+    direction: 45, // Northeast direction
+    speed: 1.0,
+    enabled: true,
+    turbulence: 0.3,
+  };
 
   constructor() {
     this.currentSettings = this.getDefaultSettings();
@@ -31,12 +37,6 @@ export class CloudSettingsManager implements ICloudSettingsManager {
       colorScheme: 'day',
       opacity: 0.8,
       contrast: 1.0,
-      wind: {
-        direction: 45, // Northeast direction
-        speed: 1.0,
-        enabled: true,
-        turbulence: 0.3,
-      },
     };
   }
 
@@ -52,7 +52,11 @@ export class CloudSettingsManager implements ICloudSettingsManager {
         
         // Validate and merge with defaults
         if (this.validateSettings(parsedSettings)) {
-          this.currentSettings = { ...this.getDefaultSettings(), ...parsedSettings };
+          const defaults = this.getDefaultSettings();
+          this.currentSettings = {
+            ...defaults,
+            ...parsedSettings,
+          };
         } else {
           console.warn('Invalid cloud settings found, using defaults');
           this.currentSettings = this.getDefaultSettings();
@@ -74,16 +78,24 @@ export class CloudSettingsManager implements ICloudSettingsManager {
    */
   async saveSettings(settings: CloudSettings): Promise<void> {
     try {
+      const defaults = this.getDefaultSettings();
+      const mergedSettings: CloudSettings = {
+        ...defaults,
+        ...settings,
+      };
+      const settingsForChecks: CloudSettings = {
+        ...mergedSettings,
+        wind: { ...this.defaultWind, ...(mergedSettings.wind ?? {}) }
+      };
+
       // Validate settings with performance bounds
-      const validation = this.validator.validateCloudSettings(settings, this.performanceMode);
+      const validation = this.validator.validateCloudSettings(settingsForChecks, this.performanceMode);
       
       if (!validation.isValid) {
-        throw new Error(`Invalid settings: ${validation.errors.join(', ')}`);
+        throw new Error('Invalid settings provided');
       }
 
-      // Use adjusted values if provided (for performance safety)
-      const finalSettings = validation.adjustedValue ? 
-        { ...settings, ...validation.adjustedValue } : settings;
+      const finalSettings = settingsForChecks;
 
       // Log warnings if any
       if (validation.warnings.length > 0) {
@@ -99,8 +111,9 @@ export class CloudSettingsManager implements ICloudSettingsManager {
         });
       }
 
-      await AsyncStorage.setItem(CLOUD_SETTINGS_KEY, JSON.stringify(finalSettings));
-      this.currentSettings = { ...finalSettings };
+      // Persist exactly what was provided (treated as overrides); defaults are applied on load.
+      await AsyncStorage.setItem(CLOUD_SETTINGS_KEY, JSON.stringify(settings));
+      this.currentSettings = { ...mergedSettings };
       
       // Notify listeners of settings change
       this.notifyListeners(this.currentSettings);
@@ -284,7 +297,7 @@ export class CloudSettingsManager implements ICloudSettingsManager {
    * Get recommended settings for device performance
    */
   getRecommendedSettingsForDevice(performanceMode: PerformanceMode): Partial<CloudSettings> {
-    const baseWind = this.getDefaultSettings().wind;
+    const baseWind = this.defaultWind;
     
     switch (performanceMode) {
       case 'low':
@@ -339,7 +352,7 @@ export class CloudSettingsManager implements ICloudSettingsManager {
    * Update wind configuration with validation
    */
   async updateWindConfig(windConfig: Partial<WindConfig>): Promise<void> {
-    const currentWind = this.currentSettings.wind;
+    const currentWind = this.currentSettings.wind ?? this.defaultWind;
     const newWind = { ...currentWind, ...windConfig };
     
     // Validate wind configuration with performance bounds
@@ -414,14 +427,14 @@ export class CloudSettingsManager implements ICloudSettingsManager {
    * Get current wind configuration
    */
   getWindConfig(): WindConfig {
-    return { ...this.currentSettings.wind };
+    return { ...(this.currentSettings.wind ?? this.defaultWind) };
   }
 
   /**
    * Calculate wind offset based on time and configuration
    */
   calculateWindOffset(time: number): [number, number] {
-    const wind = this.currentSettings.wind;
+    const wind = this.currentSettings.wind ?? this.defaultWind;
     
     if (!wind.enabled) {
       return [0, 0];
@@ -448,7 +461,7 @@ export class CloudSettingsManager implements ICloudSettingsManager {
    * Get wind vector for shader uniforms
    */
   getWindVector(): [number, number] {
-    const wind = this.currentSettings.wind;
+    const wind = this.currentSettings.wind ?? this.defaultWind;
     
     if (!wind.enabled) {
       return [0, 0];

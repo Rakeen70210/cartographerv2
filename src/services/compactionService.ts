@@ -4,6 +4,7 @@
  */
 
 import { getDatabaseService, ExploredArea } from '../database/services';
+import { spatialCacheService } from './spatialCacheService';
 import * as turf from '@turf/turf';
 
 export interface CompactionConfig {
@@ -71,7 +72,14 @@ class CompactionService {
           for (const id of oldAreaIds) {
             await this.dbService.deleteExploredArea(id);
           }
-          await this.dbService.createExploredArea(newArea);
+          const createdId = await this.dbService.createExploredArea(newArea);
+
+          // Update spatial cache to reflect compaction results
+          cluster.forEach(area => spatialCacheService.remove(area));
+          spatialCacheService.add({
+            id: createdId,
+            ...newArea,
+          });
         });
 
         totalCompacted += cluster.length;

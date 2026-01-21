@@ -36,6 +36,20 @@ export function calculateDistance(
 }
 
 /**
+ * Convert meters to miles
+ */
+export function metersToMiles(meters: number): number {
+  return meters / 1609.344;
+}
+
+/**
+ * Convert kilometers to miles
+ */
+export function kmToMiles(km: number): number {
+  return km * 0.621371;
+}
+
+/**
  * Generate grid cell ID from coordinates
  */
 export function getGridCellId(lat: number, lon: number, cellSize: number = 0.01): string {

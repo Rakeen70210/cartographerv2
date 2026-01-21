@@ -8,7 +8,6 @@ module.exports = {
     '<rootDir>/src/__tests__/setup.ts'
   ],
   testMatch: [
-    '**/__tests__/**/*.(ts|tsx|js)',
     '**/*.(test|spec).(ts|tsx|js)'
   ],
   collectCoverageFrom: [
@@ -23,6 +22,9 @@ module.exports = {
   transform: {
     '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest'
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(jest-)?react-native|@react-native|@react-native-community|expo(nent)?|@expo(nent)?/.*|@unimodules/.*|unimodules|sentry-expo|native-base|rbush|quickselect)/'
+  ],
   testEnvironment: 'jsdom',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1'

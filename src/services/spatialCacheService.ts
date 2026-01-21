@@ -18,6 +18,9 @@ class SpatialCacheService {
   private tree = new RBush<CacheItem>();
   private dbService = getDatabaseService();
   private isInitialized = false;
+  private listeners = new Set<() => void>();
+  private notifyTimeout: NodeJS.Timeout | null = null;
+  private readonly notifyDelayMs = 150;
 
   /**
    * Initializes the spatial cache by loading all explored areas from the database.
@@ -34,6 +37,7 @@ class SpatialCacheService {
     this.tree.load(cacheItems);
     this.isInitialized = true;
     console.log(`Spatial cache initialized with ${this.tree.all().length} items.`);
+    this.scheduleNotify();
   }
 
   /**
@@ -61,6 +65,7 @@ class SpatialCacheService {
     }
     const item = this.areaToCacheItem(area);
     this.tree.insert(item);
+    this.scheduleNotify();
   }
 
   /**
@@ -73,6 +78,7 @@ class SpatialCacheService {
     }
     const item = this.areaToCacheItem(area);
     this.tree.remove(item, (a, b) => a.id === b.id);
+    this.scheduleNotify();
   }
 
   /**
@@ -82,6 +88,37 @@ class SpatialCacheService {
     this.tree.clear();
     this.isInitialized = false;
     console.log('Spatial cache cleared.');
+    this.scheduleNotify();
+  }
+
+  /**
+   * Subscribe to cache update notifications.
+   */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Schedule a notification to subscribers.
+   */
+  private scheduleNotify(): void {
+    if (this.notifyTimeout) {
+      return;
+    }
+
+    this.notifyTimeout = setTimeout(() => {
+      this.notifyTimeout = null;
+      this.listeners.forEach(listener => {
+        try {
+          listener();
+        } catch (error) {
+          console.error('Spatial cache listener error:', error);
+        }
+      });
+    }, this.notifyDelayMs);
   }
 
   /**

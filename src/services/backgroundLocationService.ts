@@ -2,6 +2,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { locationService } from './locationService';
 import { getDatabaseService } from '../database/services';
 import { LocationUpdate } from '../types';
+import { spatialCacheService } from './spatialCacheService';
 
 export interface BackgroundLocationConfig {
   autoProcessOnForeground: boolean;
@@ -168,7 +169,16 @@ export class BackgroundLocationService {
             }
 
             // Create explored area
-            await databaseService.createExploredArea({
+            const exploredAreaId = await databaseService.createExploredArea({
+              latitude: location.latitude,
+              longitude: location.longitude,
+              radius: Math.max(location.accuracy, this.config.minDistance),
+              explored_at: new Date(location.timestamp).toISOString(),
+              accuracy: location.accuracy,
+            });
+
+            spatialCacheService.add({
+              id: exploredAreaId,
               latitude: location.latitude,
               longitude: location.longitude,
               radius: Math.max(location.accuracy, this.config.minDistance),

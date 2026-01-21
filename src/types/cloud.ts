@@ -49,6 +49,8 @@ export interface CloudPatch {
   indices: Uint16Array;
   densityMap: Float32Array;
   textureCoords: Float32Array;
+  vertexCount?: number;
+  indexCount?: number;
 }
 
 export interface CloudCell {
@@ -146,7 +148,7 @@ export interface CloudSettings {
   colorScheme: 'day' | 'night' | 'custom';
   opacity: number; // 0-1
   contrast: number; // 0-2
-  wind: WindConfig; // Wind configuration
+  wind?: WindConfig; // Wind configuration (optional for persisted overrides)
 }
 
 // Performance and device types

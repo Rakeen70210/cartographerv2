@@ -10,6 +10,8 @@ import { CloudDensityCalculator, DensityConfig, GeographicContext } from '../geo
 import { CloudGeometryGenerator } from '../geometry/CloudGeometry';
 import { IProceduralCloudGenerator } from '../interfaces';
 
+let patchIdCounter = 0;
+
 export interface TerrainAwareGeneratorConfig {
   enableTerrainAnalysis: boolean;
   cacheAnalysisResults: boolean;
@@ -125,7 +127,7 @@ export class TerrainAwareCloudGenerator implements IProceduralCloudGenerator {
     const { adaptedConfig } = this.cloudPatterns.getCloudConfigForTerrain(analysis);
     
     // Calculate coverage based on terrain-adapted density
-    const baseCoverage = 1 - adaptedConfig.densityThreshold;
+    const baseCoverage = Math.max(0.2, Math.min(0.9, 1 - adaptedConfig.densityThreshold));
     const terrainModifier = this.calculateTerrainCoverageModifier(analysis);
     
     return Math.max(0, Math.min(1, baseCoverage * terrainModifier));
@@ -287,7 +289,7 @@ export class TerrainAwareCloudGenerator implements IProceduralCloudGenerator {
     const orographicFactor = (elevation / 2000) + (slope / 45) * 0.3;
     
     for (let i = 0; i < densityField.length; i++) {
-      densityField[i] *= (1 + orographicFactor * 0.4);
+      densityField[i] *= (1 + orographicFactor * 0.6);
     }
   }
 
@@ -430,7 +432,7 @@ export class TerrainAwareCloudGenerator implements IProceduralCloudGenerator {
     }
 
     return {
-      id: `terrain_patch_${Date.now()}`,
+      id: `terrain_patch_${Date.now()}_${patchIdCounter++}`,
       bounds: {
         minX: bounds.west,
         minY: bounds.south,
@@ -440,7 +442,9 @@ export class TerrainAwareCloudGenerator implements IProceduralCloudGenerator {
       vertices,
       indices,
       densityMap: densityField,
-      textureCoords: texCoords
+      textureCoords: texCoords,
+      vertexCount: vertices.length / 3,
+      indexCount: indices.length
     };
   }
 
@@ -547,7 +551,9 @@ export class TerrainAwareCloudGenerator implements IProceduralCloudGenerator {
     const urbanFactor = 1 - context.urbanDensity * 0.2;
     modifiedDensity *= urbanFactor;
     
-    return Math.max(0, Math.min(1, modifiedDensity));
+    // Allow >1 multipliers so `updateCloudDensity` can actually modify the patch density map;
+    // the density map itself is still clamped to [0, 1] after scaling.
+    return Math.max(0, Math.min(2, modifiedDensity));
   }
 
   /**
@@ -555,21 +561,37 @@ export class TerrainAwareCloudGenerator implements IProceduralCloudGenerator {
    */
   private calculateTerrainCoverageModifier(analysis: TerrainAnalysis): number {
     const terrainType = analysis.terrainType.type;
-    
+
+    let modifier: number;
     switch (terrainType) {
       case 'water':
-        return 1.2; // More coverage over water
+        modifier = 1.2;
+        break;
       case 'mountain':
-        return 1.1; // Slightly more coverage in mountains
+        modifier = 1.1;
+        break;
       case 'desert':
-        return 0.3; // Much less coverage in deserts
+        modifier = 0.3;
+        break;
       case 'urban':
-        return 0.7; // Reduced coverage in urban areas
+        modifier = 0.7;
+        break;
       case 'forest':
-        return 1.0; // Normal coverage
+        modifier = 1.0;
+        break;
       default:
-        return 0.8; // Slightly reduced default coverage
+        modifier = 0.8;
+        break;
     }
+
+    // Apply continuous modifiers so coverage varies even within the same terrain class
+    const waterProximityBoost = 1 + Math.exp(-analysis.waterBody.distance / 5000) * 1.2;
+    const elevationBoost = 1 + Math.min(analysis.elevation.elevation / 3000, 1) * 0.15;
+    const urbanPenalty = 1 - analysis.urban.density * 0.15;
+
+    modifier *= waterProximityBoost * elevationBoost * urbanPenalty;
+
+    return Math.max(0.1, Math.min(2.5, modifier));
   }
 
   /**

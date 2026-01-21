@@ -2,6 +2,7 @@ import { Animated, Easing } from 'react-native';
 import { DissipationAnimation } from '../../../types/skiaFog';
 
 export interface DissipationAnimationConfig {
+  id?: string;
   center: [number, number];
   maxRadius: number;
   duration: number;
@@ -27,7 +28,7 @@ export class DissipationAnimator {
    * Creates and starts a new dissipation animation
    */
   createAnimation(config: DissipationAnimationConfig): AnimatedDissipation {
-    const animationId = `dissipation_${++this.animationCounter}_${Date.now()}`;
+    const animationId = config.id ?? `dissipation_${++this.animationCounter}_${Date.now()}`;
     
     // Create animated values for animation
     const radiusValue = new Animated.Value(0);

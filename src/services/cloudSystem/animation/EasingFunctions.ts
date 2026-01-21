@@ -233,7 +233,8 @@ export class EasingFunctions {
    */
   static steps(steps: number): EasingFunction {
     return (t: number): number => {
-      return Math.floor(t * steps) / steps;
+      const clamped = Math.min(Math.max(t, 0), 1 - Number.EPSILON);
+      return Math.floor(clamped * steps) / steps;
     };
   }
 
