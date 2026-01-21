@@ -4,7 +4,7 @@ import { resetFogState } from '../../store/slices/fogSlice';
 
 // Mock React Native's Animated API for testing
 jest.mock('react-native', () => ({
-  ...jest.requireActual('react-native'),
+  ...require('react-native/jest/mock'),
   Animated: {
     Value: jest.fn().mockImplementation((value) => ({
       setValue: jest.fn(),

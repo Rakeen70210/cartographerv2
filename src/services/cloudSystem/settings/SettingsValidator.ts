@@ -61,24 +61,19 @@ export class SettingsValidator {
       return { isValid: false, errors, warnings };
     }
 
+    if (speed < 0 || speed > 2) {
+      errors.push('Animation speed must be between 0 and 2');
+      return { isValid: false, errors, warnings };
+    }
+
     if (speed < bounds.min) {
       errors.push(`Animation speed ${speed} is below minimum ${bounds.min}`);
-      return { 
-        isValid: false, 
-        errors, 
-        warnings, 
-        adjustedValue: bounds.min 
-      };
+      return { isValid: false, errors, warnings };
     }
 
     if (speed > bounds.max) {
       warnings.push(`Animation speed ${speed} exceeds recommended maximum ${bounds.max} for ${performanceMode} performance mode`);
-      return { 
-        isValid: true, 
-        errors, 
-        warnings, 
-        adjustedValue: bounds.max 
-      };
+      return { isValid: true, errors, warnings };
     }
 
     if (speed > bounds.recommended) {
@@ -104,24 +99,19 @@ export class SettingsValidator {
       return { isValid: false, errors, warnings };
     }
 
+    if (density < 0 || density > 1) {
+      errors.push('Cloud density must be between 0 and 1');
+      return { isValid: false, errors, warnings };
+    }
+
     if (density < bounds.min) {
       errors.push(`Cloud density ${density} is below minimum ${bounds.min}`);
-      return { 
-        isValid: false, 
-        errors, 
-        warnings, 
-        adjustedValue: bounds.min 
-      };
+      return { isValid: false, errors, warnings };
     }
 
     if (density > bounds.max) {
       warnings.push(`Cloud density ${density} exceeds recommended maximum ${bounds.max} for ${performanceMode} performance mode`);
-      return { 
-        isValid: true, 
-        errors, 
-        warnings, 
-        adjustedValue: bounds.max 
-      };
+      return { isValid: true, errors, warnings };
     }
 
     if (density > bounds.recommended) {
@@ -201,24 +191,19 @@ export class SettingsValidator {
       return { isValid: false, errors, warnings };
     }
 
+    if (speed < 0 || speed > 2) {
+      errors.push('Wind speed must be between 0 and 2');
+      return { isValid: false, errors, warnings };
+    }
+
     if (speed < bounds.min) {
       errors.push(`Wind speed ${speed} is below minimum ${bounds.min}`);
-      return { 
-        isValid: false, 
-        errors, 
-        warnings, 
-        adjustedValue: bounds.min 
-      };
+      return { isValid: false, errors, warnings };
     }
 
     if (speed > bounds.max) {
       warnings.push(`Wind speed ${speed} exceeds recommended maximum ${bounds.max} for ${performanceMode} performance mode`);
-      return { 
-        isValid: true, 
-        errors, 
-        warnings, 
-        adjustedValue: bounds.max 
-      };
+      return { isValid: true, errors, warnings };
     }
 
     return { isValid: true, errors, warnings };
@@ -240,24 +225,19 @@ export class SettingsValidator {
       return { isValid: false, errors, warnings };
     }
 
+    if (turbulence < 0 || turbulence > 1) {
+      errors.push('Wind turbulence must be between 0 and 1');
+      return { isValid: false, errors, warnings };
+    }
+
     if (turbulence < bounds.min) {
       errors.push(`Wind turbulence ${turbulence} is below minimum ${bounds.min}`);
-      return { 
-        isValid: false, 
-        errors, 
-        warnings, 
-        adjustedValue: bounds.min 
-      };
+      return { isValid: false, errors, warnings };
     }
 
     if (turbulence > bounds.max) {
       warnings.push(`Wind turbulence ${turbulence} exceeds recommended maximum ${bounds.max} for ${performanceMode} performance mode`);
-      return { 
-        isValid: true, 
-        errors, 
-        warnings, 
-        adjustedValue: bounds.max 
-      };
+      return { isValid: true, errors, warnings };
     }
 
     return { isValid: true, errors, warnings };
@@ -375,6 +355,7 @@ export class SettingsValidator {
     const reasons: string[] = [];
     const recommendations: string[] = [];
     let riskScore = 0;
+    const wind = settings.wind ?? { direction: 0, speed: 0, enabled: false, turbulence: 0 };
 
     // High animation speed increases risk
     if (settings.animationSpeed > 2.0) {
@@ -391,7 +372,7 @@ export class SettingsValidator {
     }
 
     // High wind speed with high turbulence increases risk
-    if (settings.wind.speed > 1.5 && settings.wind.turbulence > 0.5) {
+    if (wind.speed > 1.5 && wind.turbulence > 0.5) {
       riskScore += 1;
       reasons.push('High wind speed combined with high turbulence may impact performance');
       recommendations.push('Consider reducing either wind speed or turbulence');

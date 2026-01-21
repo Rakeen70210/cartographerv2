@@ -66,7 +66,7 @@ export class BackupServiceTester {
         {
           type: 'distance',
           name: 'Marathon Walker',
-          description: 'Walk 42km total',
+        description: 'Walk 26.2 miles total',
           progress: 75,
         },
         {

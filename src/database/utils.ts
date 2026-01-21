@@ -135,7 +135,7 @@ export class DatabaseHealthMonitor {
 
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
     // Haversine formula for distance calculation
-    const R = 6371; // Earth's radius in kilometers
+    const R = 3958.7613; // Earth's radius in miles
     const dLat = this.toRadians(lat2 - lat1);
     const dLon = this.toRadians(lon2 - lon1);
     

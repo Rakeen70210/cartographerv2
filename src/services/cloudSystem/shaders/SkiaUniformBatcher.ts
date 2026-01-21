@@ -42,7 +42,7 @@ export class SkiaUniformBatcher {
   private pendingUpdates: Map<string, UniformUpdateRequest> = new Map();
   private lastKnownValues: Map<string, any> = new Map();
   private batchTimer: NodeJS.Timeout | null = null;
-  private isAnimationPaused = false;
+  private animationPaused = false;
   private appState: AppStateStatus = AppState.currentState;
   private updateCallbacks: Array<(uniforms: Record<string, any>) => void> = [];
   private statsCallbacks: Array<(stats: UniformBatchStats) => void> = [];
@@ -80,7 +80,7 @@ export class SkiaUniformBatcher {
     priority: 'low' | 'medium' | 'high' = 'medium'
   ): void {
     // Skip updates if animation is paused (except high priority)
-    if (this.isAnimationPaused && priority !== 'high') {
+    if (this.animationPaused && priority !== 'high') {
       this.log('Skipping update due to paused animation:', id);
       return;
     }
@@ -129,7 +129,7 @@ export class SkiaUniformBatcher {
   public pauseAnimation(): void {
     if (!this.config.enableAnimationPause) return;
 
-    this.isAnimationPaused = true;
+    this.animationPaused = true;
     this.log('Animation paused');
 
     // Clear pending low/medium priority updates
@@ -148,7 +148,7 @@ export class SkiaUniformBatcher {
   public resumeAnimation(): void {
     if (!this.config.enableAnimationPause) return;
 
-    this.isAnimationPaused = false;
+    this.animationPaused = false;
     this.log('Animation resumed');
   }
 
@@ -156,7 +156,7 @@ export class SkiaUniformBatcher {
    * Check if animation is currently paused
    */
   public isAnimationPaused(): boolean {
-    return this.isAnimationPaused;
+    return this.animationPaused;
   }
 
   /**
@@ -202,7 +202,9 @@ export class SkiaUniformBatcher {
    * Register callback for uniform updates
    */
   public onUniformUpdate(callback: (uniforms: Record<string, any>) => void): void {
-    this.updateCallbacks.push(callback);
+    if (!this.updateCallbacks.includes(callback)) {
+      this.updateCallbacks.push(callback);
+    }
   }
 
   /**
@@ -326,7 +328,9 @@ export class SkiaUniformBatcher {
         this.notifyUpdateCallbacks(batchedUniforms);
       }
 
-      const batchTime = performance.now() - startTime;
+      const rawBatchTime = performance.now() - startTime;
+      const batchTime =
+        rawBatchTime > 0 || processedCount + skippedCount === 0 ? rawBatchTime : 0.0001;
       this.updateStats(processedCount, skippedCount, batchTime);
 
       this.log(`Batch processed: ${processedCount} updates, ${skippedCount} skipped, ${batchTime.toFixed(2)}ms`);

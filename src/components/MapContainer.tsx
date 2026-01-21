@@ -41,6 +41,9 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const fogService = getFogService();
   const databaseService = getDatabaseService();
   const errorRecoveryService = getErrorRecoveryService();
+  const lastBoundsRef = useRef<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
+  const cacheRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const cacheRefreshRequestIdRef = useRef(0);
   const [cloudSystemInitialized, setCloudSystemInitialized] = useState(false);
   const [cloudSystemError, setCloudSystemError] = useState<string | null>(null);
 
@@ -119,6 +122,29 @@ const MapContainer: React.FC<MapContainerProps> = ({
     // ... (omitted for brevity, no changes here)
   };
 
+  const loadExplorationAreasForBounds = useCallback(async (bounds: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    const requestId = ++cacheRefreshRequestIdRef.current;
+    const visibleAreaIds = spatialCacheService.search(bounds);
+
+    if (visibleAreaIds.length > 0) {
+      const areas = await databaseService.getAreasByIds(visibleAreaIds);
+      if (requestId !== cacheRefreshRequestIdRef.current) {
+        return;
+      }
+
+      const explorationAreas = areas.map(area => ({
+        id: area.id!.toString(),
+        center: [area.longitude, area.latitude] as [number, number],
+        radius: area.radius,
+        exploredAt: new Date(area.explored_at).getTime(),
+        accuracy: area.accuracy,
+      }));
+      dispatch(setExploredAreas(explorationAreas));
+    } else if (requestId === cacheRefreshRequestIdRef.current) {
+      dispatch(setExploredAreas([]));
+    }
+  }, [databaseService, dispatch]);
+
   const handleMapIdle = useCallback(async (feature: any) => {
     const { geometry, properties } = feature;
     if (geometry && geometry.coordinates && properties) {
@@ -146,25 +172,51 @@ const MapContainer: React.FC<MapContainerProps> = ({
           maxX: mapBounds[0][0], // maxLng
           maxY: mapBounds[0][1], // maxLat
         };
+        lastBoundsRef.current = queryBounds;
 
-        const visibleAreaIds = spatialCacheService.search(queryBounds);
-
-        if (visibleAreaIds.length > 0) {
-          const areas = await databaseService.getAreasByIds(visibleAreaIds);
-          const explorationAreas = areas.map(area => ({
-            id: area.id!.toString(),
-            center: [area.longitude, area.latitude] as [number, number],
-            radius: area.radius,
-            exploredAt: new Date(area.explored_at).getTime(),
-            accuracy: area.accuracy,
-          }));
-          dispatch(setExploredAreas(explorationAreas));
-        } else {
-          dispatch(setExploredAreas([]));
-        }
+        await loadExplorationAreasForBounds(queryBounds);
       }
     }
-  }, [viewport, dispatch, onLocationUpdate]);
+  }, [viewport, dispatch, onLocationUpdate, loadExplorationAreasForBounds]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const handleCacheUpdate = () => {
+      if (!isMounted || !isMapReady) {
+        return;
+      }
+
+      if (cacheRefreshTimeoutRef.current) {
+        clearTimeout(cacheRefreshTimeoutRef.current);
+      }
+
+      cacheRefreshTimeoutRef.current = setTimeout(() => {
+        if (!isMounted || !isMapReady) {
+          return;
+        }
+
+        const bounds = lastBoundsRef.current;
+        if (!bounds) {
+          return;
+        }
+
+        loadExplorationAreasForBounds(bounds).catch(error => {
+          console.error('Failed to refresh exploration areas from cache update:', error);
+        });
+      }, 200);
+    };
+
+    const unsubscribe = spatialCacheService.subscribe(handleCacheUpdate);
+
+    return () => {
+      isMounted = false;
+      if (cacheRefreshTimeoutRef.current) {
+        clearTimeout(cacheRefreshTimeoutRef.current);
+      }
+      unsubscribe();
+    };
+  }, [isMapReady, loadExplorationAreasForBounds]);
 
   const handleMapReady = () => {
     console.log('🗺️ Map is ready - dispatching setMapReady(true)');

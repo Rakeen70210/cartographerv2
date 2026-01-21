@@ -39,14 +39,14 @@ export class AchievementsService {
     {
       type: 'distance_walker',
       name: 'Distance Walker',
-      description: 'Travel 10 kilometers total',
+      description: 'Travel 10 miles total',
       checkProgress: (stats) => Math.min((stats.total_distance / 10) * 100, 100),
     },
     {
       type: 'marathon_explorer',
       name: 'Marathon Explorer',
-      description: 'Travel 42 kilometers total',
-      checkProgress: (stats) => Math.min((stats.total_distance / 42) * 100, 100),
+      description: 'Travel 26.2 miles total',
+      checkProgress: (stats) => Math.min((stats.total_distance / 26.2) * 100, 100),
     },
     {
       type: 'streak_starter',

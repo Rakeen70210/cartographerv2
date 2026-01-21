@@ -360,7 +360,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ visible, onClose }
                       <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Total Distance:</Text>
                         <Text style={styles.infoValue}>
-                          {(backupInfo.userStats.total_distance / 1000).toFixed(2)} km
+                          {backupInfo.userStats.total_distance.toFixed(2)} mi
                         </Text>
                       </View>
                     </>

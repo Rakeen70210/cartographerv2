@@ -2,7 +2,7 @@ import { LocationUpdate } from '../types';
 import { getDatabaseService, ExploredArea } from '../database/services';
 import { locationService } from './locationService';
 import { processBackgroundLocations } from './taskManager';
-import { calculateDistance, createLocationKey, calculateCircleOverlap, Circle } from '../utils/spatial';
+import { calculateDistance, createLocationKey, calculateCircleOverlap, Circle, metersToMiles } from '../utils/spatial';
 import { getOfflineService } from './offlineService';
 
 export interface ExplorationConfig {
@@ -384,9 +384,11 @@ export class ExplorationService {
       // Calculate exploration percentage (simplified - could be more sophisticated)
       const explorationPercentage = userStats?.exploration_percentage || 0;
 
+      const totalDistanceMiles = metersToMiles(totalDistance);
+
       return {
         totalAreas: allAreas.length,
-        totalDistance: Math.round(totalDistance),
+        totalDistance: Math.round(totalDistanceMiles * 100) / 100,
         explorationPercentage,
         recentAreas
       };

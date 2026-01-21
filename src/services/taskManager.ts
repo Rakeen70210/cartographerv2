@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LocationUpdate } from '../types';
 import { getDatabaseService } from '../database/services';
+import { spatialCacheService } from './spatialCacheService';
 
 const BACKGROUND_LOCATION_TASK = 'background-location-task';
 const BACKGROUND_LOCATIONS_KEY = 'background_locations';
@@ -139,10 +140,19 @@ async function processLocationQueue(): Promise<void> {
 
           if (shouldProcess) {
             // Create explored area in database
-            await databaseService.createExploredArea({
+            const exploredAreaId = await databaseService.createExploredArea({
               latitude: item.latitude,
               longitude: item.longitude,
               radius: Math.max(item.accuracy, 50), // Minimum 50m radius
+              explored_at: new Date(item.timestamp).toISOString(),
+              accuracy: item.accuracy,
+            });
+
+            spatialCacheService.add({
+              id: exploredAreaId,
+              latitude: item.latitude,
+              longitude: item.longitude,
+              radius: Math.max(item.accuracy, 50),
               explored_at: new Date(item.timestamp).toISOString(),
               accuracy: item.accuracy,
             });

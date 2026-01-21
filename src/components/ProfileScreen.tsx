@@ -148,9 +148,9 @@ const ProfileScreen: React.FC = () => {
 
   const formatDistance = (distance: number): string => {
     if (distance < 1) {
-      return `${Math.round(distance * 1000)}m`;
+      return `${Math.round(distance * 5280)} ft`;
     }
-    return `${distance.toFixed(1)}km`;
+    return `${distance.toFixed(1)} mi`;
   };
 
   const formatDate = (dateString: string | null): string => {
