@@ -3,6 +3,11 @@
     "name": "cartographer-app",
     "slug": "cartographer-app",
     "version": "1.0.0",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
