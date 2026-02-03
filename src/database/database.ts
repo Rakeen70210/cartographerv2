@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { SCHEMA_QUERIES } from './schema';
+import { SCHEMA_QUERIES, MIGRATION_V2_QUERIES } from './schema';
 
 export interface DatabaseConfig {
   name: string;
@@ -32,6 +32,16 @@ export class DatabaseManager {
         'DROP TABLE IF EXISTS achievements;',
         'DROP TABLE IF EXISTS user_stats;',
         'DROP TABLE IF EXISTS explored_areas;'
+      ]
+    });
+
+    // Version 2: Tile-based exploration storage (for fast set-union sync + rendering)
+    this.migrations.push({
+      version: 2,
+      up: MIGRATION_V2_QUERIES,
+      down: [
+        'DROP INDEX IF EXISTS idx_visited_tiles_zxy;',
+        'DROP TABLE IF EXISTS visited_tiles;'
       ]
     });
   }
@@ -195,7 +205,7 @@ export const getDatabaseManager = (): DatabaseManager => {
   if (!databaseManager) {
     databaseManager = new DatabaseManager({
       name: 'cartographer.db',
-      version: 1
+      version: 2
     });
   }
   return databaseManager;

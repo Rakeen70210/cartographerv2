@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, Alert, Text, Dimensions } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { MAPBOX_CONFIG, validateMapboxConfig } from '../config/mapbox';
+import { EXPLORATION_RENDER_SOURCE, EXPLORATION_TILE_ZOOM } from '../config';
 import { MapContainerProps, MapContainerState } from '../types/map';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { getErrorRecoveryService, spatialCacheService } from '../services';
@@ -19,6 +20,7 @@ import { getFogService } from '../services/fogService';
 import { getDatabaseService } from '../database/services';
 import { cloudFogIntegration } from '../services/cloudSystem/integration';
 import { fogSystemCompatibility } from '../services/cloudSystem/integration';
+import { lonLatToTileXY, tileCenter, tileRadiusMeters } from '../utils/tiles';
 
 // Set Mapbox access token from configuration
 Mapbox.setAccessToken(MAPBOX_CONFIG.ACCESS_TOKEN);
@@ -124,6 +126,51 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
   const loadExplorationAreasForBounds = useCallback(async (bounds: { minX: number; minY: number; maxX: number; maxY: number }) => {
     const requestId = ++cacheRefreshRequestIdRef.current;
+
+    if (EXPLORATION_RENDER_SOURCE === 'tiles') {
+      try {
+        const nw = lonLatToTileXY(bounds.minX, bounds.maxY, EXPLORATION_TILE_ZOOM);
+        const se = lonLatToTileXY(bounds.maxX, bounds.minY, EXPLORATION_TILE_ZOOM);
+
+        const xMin = Math.min(nw.x, se.x);
+        const xMax = Math.max(nw.x, se.x);
+        const yMin = Math.min(nw.y, se.y);
+        const yMax = Math.max(nw.y, se.y);
+
+        const tiles = await databaseService.getVisitedTilesInBounds({
+          z: EXPLORATION_TILE_ZOOM,
+          xMin,
+          xMax,
+          yMin,
+          yMax,
+        });
+
+        if (requestId !== cacheRefreshRequestIdRef.current) {
+          return;
+        }
+
+        const explorationAreas = tiles.map(tile => {
+          const center = tileCenter(tile.x, tile.y, tile.z);
+          const radius = tileRadiusMeters(tile.x, tile.y, tile.z);
+          return {
+            id: `${tile.z}/${tile.x}/${tile.y}`,
+            center: [center.lng, center.lat] as [number, number],
+            radius,
+            exploredAt: new Date(tile.explored_at).getTime(),
+          };
+        });
+
+        dispatch(setExploredAreas(explorationAreas));
+      } catch (error) {
+        console.warn('Failed to load visited tiles for bounds:', error);
+        if (requestId === cacheRefreshRequestIdRef.current) {
+          dispatch(setExploredAreas([]));
+        }
+      }
+
+      return;
+    }
+
     const visibleAreaIds = spatialCacheService.search(bounds);
 
     if (visibleAreaIds.length > 0) {

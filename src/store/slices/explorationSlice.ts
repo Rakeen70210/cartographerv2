@@ -58,15 +58,12 @@ const explorationSlice = createSlice({
       
       if (!exists) {
         state.exploredAreas.push(newArea);
-        state.pendingAreas.push(newArea);
-        state.stats.totalAreasExplored += 1;
         state.lastExplorationUpdate = Date.now();
       }
     },
     
     setExploredAreas: (state, action: PayloadAction<ExploredArea[]>) => {
       state.exploredAreas = action.payload;
-      state.stats.totalAreasExplored = action.payload.length;
     },
     
     updateExplorationStats: (state, action: PayloadAction<Partial<ExplorationStats>>) => {

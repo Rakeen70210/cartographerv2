@@ -3,45 +3,34 @@ import { locationService } from './locationService';
 import { explorationService, ExplorationResult } from './explorationService';
 import { getFogService } from './fogService';
 import { spatialCacheService } from './spatialCacheService';
-// Note: fogAnimationService removed - animations now handled by SkiaFogOverlay
 import {
   updateLocation,
   setLocationError
 } from '../store/slices/locationSlice';
 import {
-  addExploredArea,
-  setExploredAreas,
-  setProcessingLocation,
   setExplorationError
 } from '../store/slices/explorationSlice';
 import {
-  updateFogForExploration,
   startFogClearingAnimation,
   completeFogClearingAnimation
 } from '../store/slices/fogSlice';
 import { LocationUpdate } from '../types';
 
 export interface FogLocationConfig {
-  enableRealTimeClearing: boolean;
   animationEnabled: boolean;
-  debounceInterval: number; // ms
   maxConcurrentAnimations: number;
 }
 
 export class FogLocationIntegrationService {
   private static instance: FogLocationIntegrationService;
   private fogService = getFogService();
-  // Animation service removed - animations now handled by SkiaFogOverlay
   private config: FogLocationConfig;
   private lastProcessedLocation: LocationUpdate | null = null;
-  private processingTimeout: NodeJS.Timeout | null = null;
   private activeAnimationCount = 0;
 
   private constructor() {
     this.config = {
-      enableRealTimeClearing: true,
       animationEnabled: true,
-      debounceInterval: 1000, // 1 second debounce
       maxConcurrentAnimations: 3,
     };
 
@@ -59,13 +48,11 @@ export class FogLocationIntegrationService {
    * Initialize the integration between location updates and fog clearing
    */
   private initializeIntegration(): void {
-    // Listen to location updates from location service
+    // Keep Redux location state in sync with LocationService (tracking/permissions UI uses this)
     locationService.addLocationListener(this.handleLocationUpdate.bind(this));
 
     // Listen to exploration events from exploration service
     explorationService.addExplorationListener(this.handleExplorationResult.bind(this));
-
-    // Animation callbacks removed - animations now handled by SkiaFogOverlay
 
     console.log('Fog-Location integration initialized');
   }
@@ -80,54 +67,17 @@ export class FogLocationIntegrationService {
         return; // Skip processing if location hasn't changed significantly
       }
 
+      this.lastProcessedLocation = location;
+
       // Update Redux location state only if location changed significantly
       store.dispatch(updateLocation({
         coordinates: [location.longitude, location.latitude],
         accuracy: location.accuracy,
       }));
 
-      // Debounce location processing to avoid excessive fog updates
-      if (this.processingTimeout) {
-        clearTimeout(this.processingTimeout);
-      }
-
-      this.processingTimeout = setTimeout(() => {
-        this.processLocationForFog(location);
-      }, this.config.debounceInterval);
-
     } catch (error) {
       console.error('Error handling location update:', error);
       store.dispatch(setLocationError(`Location processing error: ${error}`));
-    }
-  }
-
-  /**
-   * Process location for fog clearing (debounced)
-   */
-  private async processLocationForFog(location: LocationUpdate): Promise<void> {
-    if (!this.config.enableRealTimeClearing) {
-      return;
-    }
-
-    try {
-      store.dispatch(setProcessingLocation(true));
-
-      // Check if location has changed significantly
-      if (this.lastProcessedLocation && this.isLocationSimilar(location, this.lastProcessedLocation)) {
-        store.dispatch(setProcessingLocation(false));
-        return;
-      }
-
-      this.lastProcessedLocation = location;
-
-      // Update fog geometry based on current explored areas
-      await this.updateFogGeometry();
-
-    } catch (error) {
-      console.error('Error processing location for fog:', error);
-      store.dispatch(setExplorationError(`Fog processing error: ${error}`));
-    } finally {
-      store.dispatch(setProcessingLocation(false));
     }
   }
 
@@ -142,25 +92,13 @@ export class FogLocationIntegrationService {
 
       console.log('New area explored, updating fog:', result.exploredArea);
 
-      // Add to spatial cache for consistent querying
+      // Add to spatial cache so the map can refresh visible explored areas efficiently
       spatialCacheService.add(result.exploredArea);
-
-      // Add explored area to Redux state
-      store.dispatch(addExploredArea({
-        id: result.exploredArea.id?.toString() ?? `area_${Date.now()}`,
-        center: [result.exploredArea.longitude, result.exploredArea.latitude],
-        radius: result.exploredArea.radius,
-        exploredAt: new Date(result.exploredArea.explored_at).getTime(),
-        accuracy: result.exploredArea.accuracy,
-      }));
 
       // Trigger fog clearing animation if enabled (now handled by Redux state)
       if (this.config.animationEnabled && this.activeAnimationCount < this.config.maxConcurrentAnimations) {
         await this.triggerFogClearingAnimation(result);
       }
-
-      // Update fog geometry
-      await this.updateFogGeometry();
 
     } catch (error) {
       console.error('Error handling exploration result:', error);
@@ -203,47 +141,6 @@ export class FogLocationIntegrationService {
     }, 2500); // Match SkiaFogOverlay animation duration
 
     console.log('Fog clearing animation started:', animationId);
-  }
-
-  /**
-   * Update fog geometry based on current explored areas
-   */
-  private async updateFogGeometry(): Promise<void> {
-    try {
-      // Get all explored areas from exploration service (database)
-      const exploredAreas = await explorationService.getAllExploredAreas();
-
-      // Initialize spatial cache with explored areas
-      await spatialCacheService.initialize();
-
-      // Convert to Redux-compatible format and update exploration state
-      const explorationStateAreas = exploredAreas.map(area => ({
-        id: area.id?.toString() ?? `area_${area.latitude}_${area.longitude}`,
-        center: [area.longitude, area.latitude] as [number, number],
-        radius: area.radius,
-        exploredAt: new Date(area.explored_at).getTime(),
-        accuracy: area.accuracy,
-      }));
-
-      // CRITICAL: Update exploration slice with areas from database
-      // This is what SkiaFogOverlay reads via MapContainer
-      store.dispatch(setExploredAreas(explorationStateAreas));
-
-      // Generate updated fog geometry
-      const fogGeometry = this.fogService.generateFogGeometry(exploredAreas);
-
-      // Update fog slice state
-      store.dispatch(updateFogForExploration({
-        geometry: fogGeometry,
-        animate: false, // Don't animate for regular updates
-      }));
-
-      console.log(`Fog geometry updated and Redux synced with ${exploredAreas.length} explored areas`);
-
-    } catch (error) {
-      console.error('Error updating fog geometry:', error);
-      throw error;
-    }
   }
 
   /**
@@ -301,8 +198,8 @@ export class FogLocationIntegrationService {
       const success = await explorationService.startExploration();
 
       if (success) {
-        // Load initial fog geometry
-        await this.updateFogGeometry();
+        // Ensure spatial cache is warm so the map can query visible areas immediately
+        await spatialCacheService.initialize();
         console.log('Fog-location integration started successfully');
       }
 
@@ -320,12 +217,6 @@ export class FogLocationIntegrationService {
     try {
       console.log('Stopping fog-location integration...');
 
-      // Clear any pending timeouts
-      if (this.processingTimeout) {
-        clearTimeout(this.processingTimeout);
-        this.processingTimeout = null;
-      }
-
       // Reset animation counter (actual animations handled by SkiaFogOverlay)
       this.activeAnimationCount = 0;
 
@@ -336,13 +227,6 @@ export class FogLocationIntegrationService {
     } catch (error) {
       console.error('Error stopping fog-location integration:', error);
     }
-  }
-
-  /**
-   * Force refresh fog geometry (useful for manual updates)
-   */
-  public async refreshFogGeometry(): Promise<void> {
-    await this.updateFogGeometry();
   }
 
   /**
@@ -374,7 +258,7 @@ export class FogLocationIntegrationService {
   ): Promise<void> {
     try {
       // Process manual exploration
-      const result = await explorationService.processManualLocation(latitude, longitude, 10);
+      const result = await explorationService.processManualLocation(latitude, longitude, radius);
 
       if (result.isNewArea) {
         await this.handleExplorationResult(result);
