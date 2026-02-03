@@ -4,6 +4,8 @@ import { locationService } from './locationService';
 import { processBackgroundLocations } from './taskManager';
 import { calculateDistance, createLocationKey, calculateCircleOverlap, Circle, metersToMiles } from '../utils/spatial';
 import { getOfflineService } from './offlineService';
+import { EXPLORATION_TILE_ZOOM } from '../config';
+import { tilesForCircle } from '../utils/tiles';
 
 export interface ExplorationConfig {
   minExplorationRadius: number; // meters
@@ -269,6 +271,16 @@ export class ExplorationService {
       if (this.offlineService.isOnline()) {
         // Create directly in database
         const id = await this.databaseService.createExploredArea(exploredArea);
+
+        // Also record tile-based exploration coverage for fast set-union sync + rendering.
+        // This is best-effort; failures shouldn't block the core exploration record.
+        try {
+          const tiles = tilesForCircle(location.latitude, location.longitude, radius, EXPLORATION_TILE_ZOOM)
+            .map(tile => ({ ...tile, explored_at: exploredArea.explored_at }));
+          await this.databaseService.upsertVisitedTiles(tiles);
+        } catch (tileError) {
+          console.warn('Failed to record visited tiles for exploration:', tileError);
+        }
         
         return {
           id,

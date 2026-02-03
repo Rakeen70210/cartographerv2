@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import {
   View,
   StyleSheet,
@@ -11,14 +11,12 @@ import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
-  setUserLocation,
   setFollowUserLocation,
   centerOnLocation,
   setZoom,
   resetViewport
 } from '../store/slices/mapSlice';
 import { selectMapStatus, selectMapAndLocation } from '../store/selectors';
-import { fogLocationIntegrationService } from '../services';
 
 interface MapScreenProps {
   // Props can be expanded for additional functionality
@@ -28,68 +26,6 @@ const MapScreen: React.FC<MapScreenProps> = () => {
   const dispatch = useAppDispatch();
   const mapStatus = useAppSelector(selectMapStatus);
   const { viewport, userLocation, isTracking, hasPermission, isMapReady } = useAppSelector(selectMapAndLocation);
-  const integrationStarted = useRef(false);
-
-  // Initialize fog-location integration
-  useEffect(() => {
-    let isMounted = true;
-    let retryTimeout: NodeJS.Timeout | null = null;
-
-    const initializeIntegration = async () => {
-      if (integrationStarted.current || !isMounted) return;
-
-      // Import database service to check if ready
-      const { getDatabaseService } = await import('../database/services');
-      const dbService = getDatabaseService();
-
-      // Check if database is ready, if not, wait and retry
-      if (!dbService.isReady()) {
-        console.log('Database not ready yet, waiting to start fog-location integration...');
-        retryTimeout = setTimeout(() => {
-          if (isMounted) {
-            initializeIntegration();
-          }
-        }, 500); // Retry after 500ms
-        return;
-      }
-
-      try {
-        console.log('Initializing fog-location integration...');
-        const success = await fogLocationIntegrationService.start();
-
-        if (success && isMounted) {
-          integrationStarted.current = true;
-          console.log('Fog-location integration started successfully');
-        } else if (isMounted) {
-          console.warn('Failed to start fog-location integration');
-        }
-      } catch (error) {
-        if (isMounted) {
-          console.error('Error initializing fog-location integration:', error);
-        }
-      }
-    };
-
-    initializeIntegration();
-
-    // Cleanup on unmount
-    return () => {
-      isMounted = false;
-      if (retryTimeout) {
-        clearTimeout(retryTimeout);
-      }
-      if (integrationStarted.current) {
-        fogLocationIntegrationService.stop();
-        integrationStarted.current = false;
-      }
-    };
-  }, []); // Empty dependency array is correct here
-
-  const handleLocationUpdate = (location: [number, number]) => {
-    // Update Redux state with new location
-    dispatch(setUserLocation(location));
-    console.log('Location updated:', location);
-  };
 
   // Navigation control handlers
   const handleCenterOnUser = () => {
@@ -115,8 +51,6 @@ const MapScreen: React.FC<MapScreenProps> = () => {
     dispatch(resetViewport());
   };
 
-  console.log('🗺️ MapScreen render - isMapReady:', isMapReady, 'hasError:', mapStatus.hasError);
-
   // Show error state if map failed to load
   if (mapStatus.hasError) {
     return (
@@ -136,7 +70,6 @@ const MapScreen: React.FC<MapScreenProps> = () => {
     <View style={styles.container}>
       <View style={styles.mapWrapper}>
         <MapContainer
-          onLocationUpdate={handleLocationUpdate}
           initialCenter={MAPBOX_CONFIG.DEFAULT_CENTER}
           initialZoom={MAPBOX_CONFIG.DEFAULT_ZOOM}
         />
