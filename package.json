@@ -52,7 +52,6 @@
     "expo-status-bar": "~3.0.8",
     "expo-task-manager": "^14.0.7",
     "expo-updates": "~29.0.11",
-    "fs-extra": "^11.3.2",
     "rbush": "^4.0.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
