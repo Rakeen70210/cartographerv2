@@ -26,12 +26,12 @@ uniform float u_cloud_density;
 uniform float u_animation_speed;
 
 // --------------------------------------------------------------------------
-// BILLOWED STORM SHADER (High Contrast Fog of War)
-// Algorithm: Billowed Turbulence (Ridged Multi-fractal variant)
+// FLUFFY CUMULUS CLOUD SHADER (Bright White Fog of War)
+// Algorithm: Enhanced Billowed Turbulence for realistic cloud appearance
 // --------------------------------------------------------------------------
 
 
-// High quality 2D noise
+// High quality 2D noise with improved gradient
 float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -41,25 +41,29 @@ float hash(vec2 p) {
 float noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
+    // Quintic interpolation for smoother results
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
                mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
-// Billowed Turbulence: |Noise| gives "creases", 1.0 - |Noise| gives "puffs"
+// Enhanced Billowed Turbulence for fluffier, cumulus-like clouds
 float billowNoise(vec2 p, float time) {
     float f = 0.0;
-    float amp = 0.5;
+    float amp = 0.55;
     float freq = 1.0;
     
-    for(int i = 0; i < 4; i++) {
-        // Move each octave differently for fluid motion
-        vec2 motion = vec2(time * 0.05 * float(i+1), -time * 0.02 * float(i+1));
+    // Increased octaves for more fluffy detail
+    for(int i = 0; i < 6; i++) {
+        // Slower, more organic motion
+        vec2 motion = vec2(time * 0.03 * float(i+1), -time * 0.015 * float(i+1));
         
-        // The absolute value |noise| creates the sharp creases
-        // We invert it (1.0 - |n|) to get round puffs
+        // Enhanced billow effect for rounder puffs
         float n = noise(p * freq + motion);
-        f += (1.0 - abs(n * 2.0 - 1.0)) * amp;
+        float billow = 1.0 - abs(n * 2.0 - 1.0);
+        // Square the billow for more pronounced puffy shapes
+        billow = billow * billow;
+        f += billow * amp;
         
         p *= 2.0;
         amp *= 0.5;
@@ -67,59 +71,89 @@ float billowNoise(vec2 p, float time) {
     return f;
 }
 
+// Secondary detail noise for cloud texture
+float detailNoise(vec2 p, float time) {
+    float f = 0.0;
+    float amp = 0.3;
+    for(int i = 0; i < 3; i++) {
+        vec2 motion = vec2(time * 0.08, time * 0.04);
+        f += noise(p * 4.0 + motion) * amp;
+        p *= 2.5;
+        amp *= 0.4;
+    }
+    return f;
+}
+
 float calculateCloudDensity(vec2 uv, float time) {
-    // 1. Zoom Logic for "Big Clouds"
-    float t = time * u_animation_speed * 0.1;
-    vec2 wind = u_wind_offset * t * 0.5;
-    vec2 p = (uv + wind) * u_zoom * 0.35; 
+    // 1. Zoom Logic - larger cloud formations at all zoom levels
+    float t = time * u_animation_speed * 0.06;
+    vec2 wind = u_wind_offset * t * 0.25;
     
-    // 2. Generate Turbulence
+    // Scale differently based on zoom for consistent cloud size
+    float zoomScale = max(0.15, u_zoom * 0.2);
+    vec2 p = (uv + wind) * zoomScale; 
+    
+    // 2. Generate main cloud turbulence with multiple scales
     float d = billowNoise(p, t);
     
-    // 3. Shape the Cloud (Contrast)
-    d = pow(d, 1.1); 
-    d = smoothstep(0.2, 0.8, d);
+    // 3. Add large-scale variation for distinct cloud patches
+    float largeScale = billowNoise(p * 0.3, t * 0.5) * 0.4;
+    d = d * 0.7 + largeScale;
     
-    // 4. Guaranteed Base Density
-    return clamp(0.5 + d * 0.5, 0.0, 1.0);
+    // 4. Add fine detail layer
+    float detail = detailNoise(p * 2.0, t);
+    d = d + detail * 0.1;
+    
+    // 5. High contrast shaping for distinct fluffy clouds
+    d = pow(d, 1.3);
+    d = smoothstep(0.25, 0.85, d);
+    
+    // 6. Variable base - some areas fully transparent, others fully opaque
+    return clamp(d, 0.0, 1.0);
 }
 
 vec4 main(vec2 fragCoord) {
     vec2 uv = fragCoord / u_resolution;
-    // Fix Aspect Ratio (Crucial for round clouds)
+    // Fix Aspect Ratio
     uv.x *= u_resolution.x / u_resolution.y;
     
     float density = calculateCloudDensity(uv, u_time);
     
-    // Fake "Rim Light" / Volume detail
-    // Sample a neighbor pixel to find edges
-    // Note: We need to manually calculate the neighbor UV with aspect ratio fix too, 
-    // or just assume the offset is small enough that it doesn't matter (it doesn't).
+    // Enhanced volumetric lighting - sample multiple neighbors for 3D effect
     float d2 = calculateCloudDensity(uv + vec2(-0.02, -0.02), u_time);
-    d2 = smoothstep(0.2, 0.8, pow(d2, 1.1)); // Match the contrast curve of the main density roughly
+    float d3 = calculateCloudDensity(uv + vec2(0.015, 0.015), u_time);
     
-    // Actually, calling calculateCloudDensity again is standard.
-    // Let's just use the raw density difference.
-    
+    // Calculate depth/volume effect
     float delta = density - d2;
+    float backlight = d3 - density;
     
-    // Rim light
-    float rim = max(0.0, delta) * 3.0;
+    // Highlight on cloud tops (sun from above-left)
+    float highlight = max(0.0, delta) * 3.0;
+    // Backlight for depth and rim lighting
+    float backlightAmount = max(0.0, backlight) * 1.2;
     
-    // Colors: DESATURATED STORM (cool slate)
-    vec3 shadow = vec3(0.12, 0.15, 0.18); // Deep Slate
-    vec3 mid    = vec3(0.35, 0.38, 0.42); // Grey
-    vec3 high   = vec3(0.55, 0.58, 0.62); // Light Grey
+    // Colors: BRIGHT WHITE FLUFFY CLOUDS
+    vec3 shadow = vec3(0.82, 0.85, 0.92);   // Soft blue-gray shadow
+    vec3 mid    = vec3(0.94, 0.95, 0.97);   // Near-white body  
+    vec3 high   = vec3(1.0, 1.0, 1.0);      // Pure white highlights
+    vec3 glow   = vec3(0.96, 0.97, 1.0);    // Cool backlight glow
     
-    vec3 color = mix(shadow, mid, smoothstep(0.4, 0.7, density));
-    color = mix(color, high, smoothstep(0.7, 1.0, density));
+    // Build up cloud color with clear transitions
+    vec3 color = mix(shadow, mid, smoothstep(0.2, 0.5, density));
+    color = mix(color, high, smoothstep(0.5, 0.85, density));
     
-    // Add Rim
-    color += vec3(0.2) * rim;
+    // Add highlight on edges catching "sunlight"
+    color = mix(color, high, clamp(highlight, 0.0, 0.5));
     
-    // Alpha: "Fog of War"
-    // Since density is min 0.5, alpha will be min ~0.6
-    float alpha = clamp(density * 1.2, 0.0, 0.98);
+    // Add subtle backlight glow for depth
+    color = mix(color, glow, backlightAmount * 0.25);
+    
+    // Alpha: More opaque clouds with soft edges
+    // Higher minimum alpha to ensure clouds obscure the background
+    float alpha = smoothstep(0.0, 0.4, density);
+    // Ensure minimum 60% opacity where clouds exist, max 96%
+    alpha = 0.6 + alpha * 0.36;
+    alpha = clamp(alpha * density, 0.0, 0.96);
     
     return vec4(color, alpha);
 }

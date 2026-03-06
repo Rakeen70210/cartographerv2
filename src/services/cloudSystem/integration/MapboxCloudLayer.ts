@@ -6,6 +6,7 @@
 import { ICloudRenderingEngine, IShaderSystem, ITextureManager } from '../interfaces';
 import { CloudState, ShaderUniforms, MapBounds } from '../../../types/cloud';
 import { ExplorationArea } from '../../../types/exploration';
+import { debugLog } from '../../../utils/logger';
 
 export interface MapboxCloudLayerProps {
   id: string;
@@ -23,7 +24,7 @@ export class MapboxCloudLayer {
   public readonly id: string;
   public readonly type = 'custom';
   public readonly renderingMode = '3d';
-  
+
   private cloudEngine: ICloudRenderingEngine;
   private shaderSystem: IShaderSystem;
   private textureManager: ITextureManager;
@@ -31,15 +32,15 @@ export class MapboxCloudLayer {
   private map: any = null;
   private initialized = false;
   private zIndex: number;
-  
+
   // Animation frame tracking
   private animationFrameId: number | null = null;
   private lastFrameTime = 0;
-  
+
   // Layer state
   private visible = true;
   private opacity = 1.0;
-  
+
   constructor(props: MapboxCloudLayerProps) {
     this.id = props.id;
     this.cloudEngine = props.cloudEngine;
@@ -52,13 +53,14 @@ export class MapboxCloudLayer {
    * Mapbox custom layer lifecycle method - called when layer is added to map
    */
   onAdd = (map: any, gl: WebGLRenderingContext): void => {
-    console.log('🌥️ MapboxCloudLayer: onAdd called');
-    
+    debugLog('CloudLayer', 'onAdd called');
+
     this.map = map;
     this.gl = gl;
-    
+
     this.initializeCloudSystem().catch(error => {
-      console.error('🌥️ Failed to initialize cloud system:', error);
+      // Silently fail - cloud system is optional cosmetic feature
+      debugLog('CloudLayer', 'Failed to initialize cloud system');
     });
   };
 
@@ -66,8 +68,8 @@ export class MapboxCloudLayer {
    * Mapbox custom layer lifecycle method - called when layer is removed
    */
   onRemove = (): void => {
-    console.log('🌥️ MapboxCloudLayer: onRemove called');
-    
+    debugLog('CloudLayer', 'onRemove called');
+
     this.cleanup();
   };
 
@@ -75,7 +77,16 @@ export class MapboxCloudLayer {
    * Mapbox custom layer render method - called every frame
    */
   render = (gl: WebGLRenderingContext, matrix: number[]): void => {
+    // Skip render if not fully initialized or not visible
     if (!this.initialized || !this.visible) {
+      return;
+    }
+
+    // Check if shader system is ready by trying to get the shader
+    try {
+      this.shaderSystem.getCloudShader();
+    } catch {
+      // Shader not ready, skip rendering
       return;
     }
 
@@ -88,22 +99,20 @@ export class MapboxCloudLayer {
       // Get current map state
       const mapBounds = this.getMapBounds();
       const zoomLevel = this.map.getZoom();
-      
+
       // Update cloud engine with current map state
       this.cloudEngine.updateMapBounds(mapBounds);
       this.cloudEngine.setZoomLevel(zoomLevel);
 
       // Prepare shader uniforms
       const uniforms = this.prepareShaderUniforms(matrix, currentTime, zoomLevel);
-      
-      // Update shader uniforms
-      this.shaderSystem.updateUniforms(uniforms);
-      
-      // Render clouds
-      this.renderClouds(gl, matrix);
-      
+
+      // Render clouds (uniforms are updated inside after binding shader)
+      this.renderClouds(gl, matrix, uniforms);
+
     } catch (error) {
-      console.error('🌥️ Error during cloud rendering:', error);
+      // Silently fail - cloud rendering is non-essential
+      debugLog('CloudLayer', 'Error during cloud rendering');
     }
   };
 
@@ -116,25 +125,25 @@ export class MapboxCloudLayer {
     }
 
     try {
-      console.log('🌥️ Initializing cloud system components...');
-      
+      debugLog('CloudLayer', 'Initializing cloud system components...');
+
       // Initialize shader system
       await this.shaderSystem.initialize(this.gl);
-      console.log('🌥️ Shader system initialized');
-      
+      debugLog('CloudLayer', 'Shader system initialized');
+
       // Initialize texture manager
       await this.textureManager.initialize(this.gl);
-      console.log('🌥️ Texture manager initialized');
-      
+      debugLog('CloudLayer', 'Texture manager initialized');
+
       // Initialize cloud engine
       await this.cloudEngine.initialize();
-      console.log('🌥️ Cloud engine initialized');
-      
+      debugLog('CloudLayer', 'Cloud engine initialized');
+
       this.initialized = true;
-      console.log('🌥️ Cloud system initialization complete');
-      
+      debugLog('CloudLayer', 'Cloud system initialization complete');
+
     } catch (error) {
-      console.error('🌥️ Cloud system initialization failed:', error);
+      debugLog('CloudLayer', 'Cloud system initialization failed');
       throw error;
     }
   }
@@ -160,13 +169,13 @@ export class MapboxCloudLayer {
    * Prepare shader uniforms for current frame
    */
   private prepareShaderUniforms(
-    matrix: number[], 
-    currentTime: number, 
+    matrix: number[],
+    currentTime: number,
     zoomLevel: number
   ): Partial<ShaderUniforms> {
     // Convert Mapbox matrix to Float32Array
     const viewMatrix = new Float32Array(matrix);
-    
+
     // Create projection matrix (identity for now, can be enhanced)
     const projectionMatrix = new Float32Array([
       1, 0, 0, 0,
@@ -191,29 +200,32 @@ export class MapboxCloudLayer {
   /**
    * Render clouds using WebGL
    */
-  private renderClouds(gl: WebGLRenderingContext, matrix: number[]): void {
+  private renderClouds(gl: WebGLRenderingContext, matrix: number[], uniforms: Partial<import('../../../types/cloud').ShaderUniforms>): void {
     // Save current WebGL state
     const currentProgram = gl.getParameter(gl.CURRENT_PROGRAM);
     const currentBlend = gl.getParameter(gl.BLEND);
     const currentDepthTest = gl.getParameter(gl.DEPTH_TEST);
-    
+
     try {
       // Set up blending for cloud transparency
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      
+
       // Enable depth testing for proper layering
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
-      
-      // Get and bind cloud shader program
+
+      // Get and bind cloud shader program BEFORE updating uniforms
       const cloudShader = this.shaderSystem.getCloudShader();
       this.shaderSystem.bindShaderProgram(cloudShader);
-      
+
+      // Now update uniforms - the correct program is bound
+      this.shaderSystem.updateUniforms(uniforms);
+
       // Render cloud geometry (placeholder for now)
       // This will be implemented when cloud geometry generation is complete
       this.renderCloudGeometry(gl);
-      
+
     } finally {
       // Restore WebGL state
       gl.useProgram(currentProgram);
@@ -228,7 +240,7 @@ export class MapboxCloudLayer {
   private renderCloudGeometry(gl: WebGLRenderingContext): void {
     // Placeholder: This will render actual cloud geometry once
     // the cloud generation system is integrated
-    
+
     // For now, we just ensure the shader is properly bound
     // The actual geometry rendering will be implemented in later tasks
   }
@@ -243,13 +255,13 @@ export class MapboxCloudLayer {
 
     try {
       this.cloudEngine.updateClouds(exploredAreas);
-      
+
       // Trigger repaint to show changes
       if (this.map) {
         this.map.triggerRepaint();
       }
     } catch (error) {
-      console.error('🌥️ Error updating explored areas:', error);
+      debugLog('CloudLayer', 'Error updating explored areas');
     }
   }
 
@@ -258,7 +270,7 @@ export class MapboxCloudLayer {
    */
   public setVisible(visible: boolean): void {
     this.visible = visible;
-    
+
     if (this.map) {
       this.map.triggerRepaint();
     }
@@ -269,7 +281,7 @@ export class MapboxCloudLayer {
    */
   public setOpacity(opacity: number): void {
     this.opacity = Math.max(0, Math.min(1, opacity));
-    
+
     if (this.map) {
       this.map.triggerRepaint();
     }
@@ -290,23 +302,23 @@ export class MapboxCloudLayer {
    * Cleanup resources when layer is removed
    */
   private cleanup(): void {
-    console.log('🌥️ Cleaning up cloud layer resources...');
-    
+    debugLog('CloudLayer', 'Cleaning up cloud layer resources...');
+
     // Cancel animation frame
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-    
+
     // Dispose cloud system components
     try {
       this.cloudEngine.dispose();
       this.shaderSystem.dispose();
       this.textureManager.dispose();
     } catch (error) {
-      console.error('🌥️ Error during cleanup:', error);
+      debugLog('CloudLayer', 'Error during cleanup');
     }
-    
+
     this.initialized = false;
     this.gl = null;
     this.map = null;
@@ -316,14 +328,14 @@ export class MapboxCloudLayer {
    * Handle WebGL context loss
    */
   public handleContextLoss(): void {
-    console.warn('🌥️ WebGL context lost, reinitializing...');
-    
+    debugLog('CloudLayer', 'WebGL context lost, reinitializing...');
+
     this.initialized = false;
-    
+
     // Reinitialize when context is restored
     if (this.gl && this.map) {
       this.initializeCloudSystem().catch(error => {
-        console.error('🌥️ Failed to reinitialize after context loss:', error);
+        debugLog('CloudLayer', 'Failed to reinitialize after context loss');
       });
     }
   }
