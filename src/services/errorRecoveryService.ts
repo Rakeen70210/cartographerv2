@@ -2,6 +2,7 @@ import * as Location from 'expo-location';
 import { Alert } from 'react-native';
 import { getDatabaseService } from '../database/services';
 import { getMapboxOfflineService } from './mapboxOfflineService';
+import { debugLog } from '../utils/logger';
 
 export interface ErrorRecoveryConfig {
   maxRetries: number;
@@ -71,7 +72,8 @@ class ErrorRecoveryService {
     };
 
     this.errorHistory.push(context);
-    console.error(`Location service error in ${operation}:`, error);
+    // Location timeouts are expected on desktop browsers without GPS
+    debugLog('Location', `Location service error in ${operation}: ${error.message}`);
 
     // Check for specific location error types
     if (error.message.includes('Location permissions')) {
@@ -269,7 +271,7 @@ class ErrorRecoveryService {
       freedMemoryMB += 20;
 
       console.log(`Emergency cleanup completed, freed ${freedMemoryMB}MB`);
-      
+
       return {
         freedMemoryMB,
         cleanupActions,
@@ -335,7 +337,7 @@ class ErrorRecoveryService {
       freedSpaceMB += 50;
 
       console.log(`Storage cleanup completed, freed ${freedSpaceMB}MB`);
-      
+
       return {
         freedSpaceMB,
         cleanupActions,
@@ -403,11 +405,11 @@ class ErrorRecoveryService {
 
     while (attempts < maxAttempts && !recovered) {
       attempts++;
-      
+
       try {
         // Mock recovery attempt
         await this.sleep(1000);
-        
+
         // Simulate success on second attempt
         if (attempts >= 2) {
           recovered = true;
@@ -418,7 +420,7 @@ class ErrorRecoveryService {
     }
 
     console.log(`Service recovery for ${serviceName}: ${recovered ? 'successful' : 'failed'} after ${attempts} attempts`);
-    
+
     return {
       service: serviceName,
       recovered,
@@ -440,13 +442,13 @@ class ErrorRecoveryService {
     fallbackStrategy: string;
   }> {
     const { x, y, z, error } = tileError;
-    
+
     console.log(`Map tile error at ${z}/${x}/${y}: ${error}`);
-    
+
     // Determine fallback strategy based on error type
     let fallbackStrategy = 'use_cached_tile';
     let retry = true;
-    
+
     if (error.includes('404') || error.includes('not found')) {
       fallbackStrategy = 'use_lower_zoom_tile';
       retry = false;
@@ -457,7 +459,7 @@ class ErrorRecoveryService {
       fallbackStrategy = 'use_cached_tile';
       retry = true;
     }
-    
+
     return {
       retry,
       fallbackStrategy
@@ -472,7 +474,7 @@ class ErrorRecoveryService {
     try {
       // Check current permission status
       const { status } = await Location.getForegroundPermissionsAsync();
-      
+
       if (status === 'denied') {
         if (this.config.userNotifications) {
           Alert.alert(
@@ -504,7 +506,7 @@ class ErrorRecoveryService {
         [{ text: 'OK' }]
       );
     }
-    
+
     // Enable manual exploration mode as fallback
     return this.enableManualExplorationMode();
   }
@@ -515,7 +517,7 @@ class ErrorRecoveryService {
       // Instead of directly calling locationService, we'll use Location API directly
       // This avoids circular dependency
       console.log('Adjusting location accuracy settings for error recovery');
-      
+
       context.retryCount++;
       return true;
     } catch (error) {
@@ -532,7 +534,7 @@ class ErrorRecoveryService {
     // Exponential backoff retry
     const delay = this.config.retryDelay * Math.pow(2, context.retryCount);
     await this.sleep(delay);
-    
+
     context.retryCount++;
     return true; // Indicate retry should be attempted
   }
@@ -540,15 +542,15 @@ class ErrorRecoveryService {
   private async handleDatabaseCorruption(context: ErrorContext): Promise<boolean> {
     try {
       console.warn('Database corruption detected, attempting repair...');
-      
+
       const databaseService = getDatabaseService();
-      
+
       // Try to backup current data before repair
       const backupSuccess = await this.backupCorruptedDatabase();
-      
+
       // Attempt database repair
       const repairSuccess = await databaseService.repairDatabase();
-      
+
       if (repairSuccess) {
         console.log('Database repair successful');
         return true;
@@ -568,7 +570,7 @@ class ErrorRecoveryService {
     // Wait and retry with exponential backoff
     const delay = this.config.retryDelay * Math.pow(2, context.retryCount);
     await this.sleep(delay);
-    
+
     context.retryCount++;
     return true;
   }
@@ -576,10 +578,10 @@ class ErrorRecoveryService {
   private async handleDatabaseSchemaError(context: ErrorContext): Promise<boolean> {
     try {
       console.warn('Database schema error detected, attempting migration...');
-      
+
       const databaseService = getDatabaseService();
       const migrationSuccess = await databaseService.runMigrations();
-      
+
       if (migrationSuccess) {
         console.log('Database migration successful');
         return true;
@@ -599,7 +601,7 @@ class ErrorRecoveryService {
 
     const delay = this.config.retryDelay * Math.pow(2, context.retryCount);
     await this.sleep(delay);
-    
+
     context.retryCount++;
     return true;
   }
@@ -609,7 +611,7 @@ class ErrorRecoveryService {
     try {
       const offlineService = getMapboxOfflineService();
       const hasOfflineData = await offlineService.hasOfflineData();
-      
+
       if (hasOfflineData) {
         console.log('Network unavailable, switching to offline mode');
         return this.enableOfflineMode();
@@ -644,7 +646,7 @@ class ErrorRecoveryService {
     // Implement exponential backoff for rate limiting
     const delay = Math.min(60000, this.config.retryDelay * Math.pow(2, context.retryCount + 2)); // Max 1 minute
     await this.sleep(delay);
-    
+
     context.retryCount++;
     return context.retryCount < this.config.maxRetries;
   }
@@ -656,7 +658,7 @@ class ErrorRecoveryService {
 
     const delay = this.config.retryDelay * Math.pow(2, context.retryCount);
     await this.sleep(delay);
-    
+
     context.retryCount++;
     return true;
   }
@@ -677,7 +679,7 @@ class ErrorRecoveryService {
     try {
       const offlineService = getMapboxOfflineService();
       const hasOfflineData = await offlineService.hasOfflineData();
-      
+
       if (hasOfflineData) {
         return this.enableOfflineMode();
       } else {
@@ -695,7 +697,7 @@ class ErrorRecoveryService {
 
     const delay = this.config.retryDelay * Math.pow(2, context.retryCount);
     await this.sleep(delay);
-    
+
     context.retryCount++;
     return true;
   }
@@ -710,8 +712,8 @@ class ErrorRecoveryService {
       'SQLITE_CORRUPT',
       'SQLITE_NOTADB',
     ];
-    
-    return corruptionIndicators.some(indicator => 
+
+    return corruptionIndicators.some(indicator =>
       error.message.toLowerCase().includes(indicator.toLowerCase())
     );
   }
@@ -722,10 +724,10 @@ class ErrorRecoveryService {
       const databaseService = getDatabaseService();
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupName = `corrupted_backup_${timestamp}`;
-      
+
       // This would need to be implemented in the database service
       // await databaseService.exportCorruptedData(backupName);
-      
+
       console.log(`Corrupted database backup attempted: ${backupName}`);
       return true;
     } catch (error) {

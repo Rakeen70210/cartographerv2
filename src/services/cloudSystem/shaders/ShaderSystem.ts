@@ -9,6 +9,7 @@ import { CloudVertexShader, CloudVertexShaderSource } from './CloudVertexShader'
 import { CloudFragmentShader, CloudFragmentShaderSource } from './CloudFragmentShader';
 import { ShaderCompiler, ProgramLinkResult } from './ShaderCompiler';
 import { UniformManager } from './UniformManager';
+import { debugLog } from '../../../utils/logger';
 
 export class ShaderSystem implements IShaderSystem {
   private gl: WebGLRenderingContext | null = null;
@@ -35,14 +36,14 @@ export class ShaderSystem implements IShaderSystem {
     try {
       // Compile cloud shaders
       this.cloudProgram = await this.compileCloudShaders();
-      
+
       // Create uniform manager
       this.uniformManager = new UniformManager(gl, this.cloudProgram.uniforms);
-      
+
       this.initialized = true;
-      console.log('Shader system initialized successfully');
+      debugLog('Shader', 'Shader system initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize shader system:', error);
+      debugLog('Shader', 'Failed to initialize shader system');
       throw error;
     }
   }
@@ -81,7 +82,7 @@ export class ShaderSystem implements IShaderSystem {
 
       // Validate the program
       if (!this.compiler.validateProgram(result.program)) {
-        console.warn('Shader program validation failed, but continuing anyway');
+        debugLog('Shader', 'Shader program validation failed, but continuing anyway');
       }
 
       const shaderProgram: CloudShaderProgram = {
@@ -90,11 +91,11 @@ export class ShaderSystem implements IShaderSystem {
         attributes
       };
 
-      console.log('Cloud shaders compiled successfully');
+      debugLog('Shader', 'Cloud shaders compiled successfully');
       return shaderProgram;
 
     } catch (error) {
-      console.error('Cloud shader compilation error:', error);
+      debugLog('Shader', 'Cloud shader compilation error');
       throw error;
     }
   }
@@ -104,7 +105,7 @@ export class ShaderSystem implements IShaderSystem {
    */
   updateUniforms(uniforms: Partial<ShaderUniforms>): void {
     if (!this.uniformManager) {
-      console.warn('Cannot update uniforms: uniform manager not initialized');
+      // Silently skip - uniform manager not initialized
       return;
     }
 
@@ -142,7 +143,7 @@ export class ShaderSystem implements IShaderSystem {
    */
   setTexture(name: string, texture: WebGLTexture, textureUnit: number = 0): void {
     if (!this.uniformManager) {
-      console.warn('Cannot set texture: uniform manager not initialized');
+      // Silently skip - uniform manager not initialized
       return;
     }
 
@@ -160,7 +161,7 @@ export class ShaderSystem implements IShaderSystem {
    * Handle WebGL context loss
    */
   handleContextLoss(): void {
-    console.warn('WebGL context lost, marking shader system as uninitialized');
+    debugLog('Shader', 'WebGL context lost, marking shader system as uninitialized');
     this.initialized = false;
     this.cloudProgram = null;
     this.uniformManager = null;
@@ -170,7 +171,7 @@ export class ShaderSystem implements IShaderSystem {
    * Handle WebGL context restoration
    */
   async handleContextRestore(gl: WebGLRenderingContext): Promise<void> {
-    console.log('WebGL context restored, reinitializing shader system');
+    debugLog('Shader', 'WebGL context restored, reinitializing shader system');
     this.dispose();
     await this.initialize(gl);
   }
@@ -187,7 +188,7 @@ export class ShaderSystem implements IShaderSystem {
     const fragmentSource = this.compiler.createFallbackFragmentShader();
 
     const result = this.compiler.compileProgram(vertexSource, fragmentSource, false);
-    
+
     if (!result.success || !result.program) {
       throw new Error(`Fallback shader compilation failed: ${result.error}`);
     }
@@ -248,6 +249,6 @@ export class ShaderSystem implements IShaderSystem {
     this.fragmentShader = null;
     this.initialized = false;
 
-    console.log('Shader system disposed');
+    debugLog('Shader', 'Shader system disposed');
   }
 }

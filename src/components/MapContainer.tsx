@@ -289,6 +289,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
           onUpdate={handleUserLocationUpdate}
         />
       </Mapbox.MapView>
+      {(() => { console.log('🌫️ MapContainer fog render check:', { isMapReady, fogVisible, exploredAreasCount: exploredAreas?.length }); return null; })()}
       {isMapReady && fogVisible && (() => {
         // Include user's current location as an explored area for immediate fog clearing
         const areasWithUserLocation = userLocation ? [

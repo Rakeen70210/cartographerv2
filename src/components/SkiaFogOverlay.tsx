@@ -423,6 +423,15 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
   const activeShader = shaderInitialized ? shaderSystem.getActiveShader() : null;
   const uniformsForSkia = shaderInitialized ? shaderSystem.getUniformsForSkia() : {};
 
+  // Debug logging for fog rendering
+  console.log('🌫️ SkiaFogOverlay render:', {
+    shaderInitialized,
+    hasActiveShader: !!activeShader,
+    viewportSize: `${viewport.width}x${viewport.height}`,
+    exploredAreasCount: exploredAreas?.length ?? 0,
+    fogOpacity
+  });
+
   if (activeShader && __DEV__) {
     console.debug(`🌫️ Rendering fog with ${shaderSystem.getShaderComplexity()} complexity`);
   }
@@ -441,7 +450,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
         ) : (
           // Ultimate fallback to basic fog fill when nothing else works
           <Fill
-            color={`rgba(139, 157, 195, ${Math.min(fogOpacity * cloudDensity, 0.8)})`}
+            color={`rgba(245, 248, 255, ${Math.min(fogOpacity * cloudDensity, 0.92)})`}
           />
         )}
 
