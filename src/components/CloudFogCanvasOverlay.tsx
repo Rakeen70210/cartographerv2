@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { BoundingBox } from '../types/fog';
+import { BoundingBox, FogGeometry } from '../types/fog';
 import {
   createWorldAnchoredCloudPuffs,
   ScreenPoint,
@@ -25,20 +25,50 @@ interface CloudFogCanvasOverlayProps {
   cloudDensity: number;
   zoomLevel: number;
   visualParams: CloudFogVisualParams;
+  fogGeometry: FogGeometry | null;
   exploredAreas: Array<{
     center: [number, number];
     radius: number;
   }>;
 }
+const INTERACT_FRAME_MS = 40;
 const IDLE_FRAME_MS = 90;
+const MAX_PROJECTABLE_LATITUDE = 85.051129;
+
+const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+const wrapLongitude = (longitude: number): number => {
+  const wrapped = ((longitude + 180) % 360 + 360) % 360 - 180;
+  return wrapped === -180 ? 180 : wrapped;
+};
+
+const projectCoordinate = (map: WebMapLike, longitude: number, latitude: number): ScreenPoint =>
+  map.project([
+    wrapLongitude(longitude),
+    clamp(latitude, -MAX_PROJECTABLE_LATITUDE, MAX_PROJECTABLE_LATITUDE),
+  ]);
 
 const getBounds = (map: WebMapLike): BoundingBox => {
   const bounds = map.getBounds();
+  const north = clamp(bounds.getNorth(), -MAX_PROJECTABLE_LATITUDE, MAX_PROJECTABLE_LATITUDE);
+  const south = clamp(bounds.getSouth(), -MAX_PROJECTABLE_LATITUDE, MAX_PROJECTABLE_LATITUDE);
+  const east = bounds.getEast();
+  const west = bounds.getWest();
+
+  if (!Number.isFinite(east) || !Number.isFinite(west) || east <= west || east > 180 || west < -180) {
+    return {
+      north,
+      south,
+      east: 180,
+      west: -180,
+    };
+  }
+
   return {
-    north: bounds.getNorth(),
-    south: bounds.getSouth(),
-    east: bounds.getEast(),
-    west: bounds.getWest(),
+    north,
+    south,
+    east,
+    west,
   };
 };
 
@@ -48,6 +78,7 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
   cloudDensity,
   zoomLevel,
   visualParams,
+  fogGeometry: _fogGeometry,
   exploredAreas,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -55,6 +86,7 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
   const isInteractingRef = useRef(false);
   const idleFrameRef = useRef<number | null>(null);
   const lastIdleDrawTimeRef = useRef(0);
+  const lastInteractionDrawTimeRef = useRef(0);
 
   const effectiveOpacity = useMemo(() => visualParams.effectiveFogOpacity, [visualParams]);
 
@@ -117,7 +149,6 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
     const ambient = visualParams.ambientColor.map(channel => Math.round(channel * 255));
     const highlight = visualParams.highlightColor.map(channel => Math.round(channel * 255));
 
-    context.filter = 'blur(20px)';
     const shadowGradient = context.createRadialGradient(
       radiusX * -0.25,
       radiusY * 0.18,
@@ -133,7 +164,7 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
     context.ellipse(0, radiusY * 0.12, radiusX * 1.05, radiusY * 0.86, 0, 0, Math.PI * 2);
     context.fill();
 
-    const lobeCount = 4 + Math.floor(random(1) * 3);
+    const lobeCount = 3 + Math.floor(random(1) * 2);
     for (let index = 0; index < lobeCount; index += 1) {
       const angle = (index / lobeCount) * Math.PI * 2 + (random(index + 2) - 0.5) * 0.65;
       const offsetRadius = radiusX * (0.12 + random(index + 9) * 0.26);
@@ -160,7 +191,6 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
       context.fill();
     }
 
-    context.filter = 'blur(14px)';
     const highlightGradient = context.createLinearGradient(
       -radiusX * 0.75,
       -radiusY * 0.6,
@@ -175,7 +205,6 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
     context.ellipse(-radiusX * 0.08, -radiusY * 0.08, radiusX * 0.92, radiusY * 0.68, 0, 0, Math.PI * 2);
     context.fill();
 
-    context.filter = 'none';
     context.restore();
   }, [visualParams]);
 
@@ -214,9 +243,9 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
 
     puffs.forEach(puff => {
       const [longitude, latitude] = puff.center;
-      const center = map.project([longitude, latitude]);
-      const eastPoint = map.project([longitude + puff.radiusLng, latitude]);
-      const northPoint = map.project([longitude, latitude + puff.radiusLat]);
+      const center = projectCoordinate(map, longitude, latitude);
+      const eastPoint = projectCoordinate(map, longitude + puff.radiusLng, latitude);
+      const northPoint = projectCoordinate(map, longitude, latitude + puff.radiusLat);
       const radiusX = Math.max(22, Math.abs(eastPoint.x - center.x) * puff.stretchX);
       const radiusY = Math.max(18, Math.abs(northPoint.y - center.y) * puff.stretchY);
 
@@ -245,15 +274,14 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
     if (exploredAreas.length > 0) {
       context.save();
       context.globalCompositeOperation = 'destination-out';
-      context.filter = 'blur(18px)';
 
       exploredAreas.forEach(area => {
         const [longitude, latitude] = area.center;
-        const center = map.project([longitude, latitude]);
+        const center = projectCoordinate(map, longitude, latitude);
         const latRadius = area.radius / 111320;
         const lngRadius = area.radius / Math.max(111320 * Math.cos((latitude * Math.PI) / 180), 0.0001);
-        const eastPoint = map.project([longitude + lngRadius, latitude]);
-        const northPoint = map.project([longitude, latitude + latRadius]);
+        const eastPoint = projectCoordinate(map, longitude + lngRadius, latitude);
+        const northPoint = projectCoordinate(map, longitude, latitude + latRadius);
         const radiusX = Math.max(24, Math.abs(eastPoint.x - center.x));
         const radiusY = Math.max(24, Math.abs(northPoint.y - center.y));
 
@@ -275,7 +303,6 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
         context.fill();
       });
 
-      context.filter = 'none';
       context.restore();
     }
 
@@ -293,15 +320,23 @@ export const CloudFogCanvasOverlay: React.FC<CloudFogCanvasOverlayProps> = ({
 
     const handleRender = () => {
       if (isInteractingRef.current) {
+        const now = performance.now();
+        if (now - lastInteractionDrawTimeRef.current < INTERACT_FRAME_MS) {
+          return;
+        }
+
+        lastInteractionDrawTimeRef.current = now;
         drawOverlay(performance.now());
       }
     };
     const handleInteractionStart = () => {
       isInteractingRef.current = true;
+      lastInteractionDrawTimeRef.current = 0;
       drawOverlay(performance.now());
     };
     const handleInteractionEnd = () => {
       isInteractingRef.current = false;
+      lastInteractionDrawTimeRef.current = 0;
       drawOverlay(performance.now());
     };
 

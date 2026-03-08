@@ -13,7 +13,7 @@ import { fetchProfileStats, refreshStats } from '../store/slices/profileSlice';
 import { cloudFogIntegration, fogSystemCompatibility } from '../services/cloudSystem/integration';
 import { BackupManager } from './BackupManager';
 import { OfflineManager } from './OfflineManager';
-import CloudSettingsPanel from './CloudSettingsPanel';
+import { CloudSettingsPanel } from './CloudSettingsPanel';
 
 const { width } = Dimensions.get('window');
 

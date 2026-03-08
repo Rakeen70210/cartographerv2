@@ -22,6 +22,9 @@ export interface CloudPuffDescriptor {
   highlight: number;
 }
 
+export const MAX_CLOUD_PUFFS = 60;
+export const CLOUD_PUFF_GRID_PADDING_FACTOR = 1.0;
+
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
 const fract = (value: number): number => value - Math.floor(value);
@@ -66,9 +69,13 @@ export const createWorldAnchoredCloudPuffs = (
   const normalizedDensity = clamp(density, 0, 1);
   const gridSizeLng = clamp(4.8 / Math.pow(2, zoomLevel / 3.45), 0.18, 8);
   const gridSizeLat = gridSizeLng * 0.86;
-  const paddedBounds = expandBounds(bounds, gridSizeLng * 1.75, gridSizeLat * 1.75);
+  const paddedBounds = expandBounds(
+    bounds,
+    gridSizeLng * CLOUD_PUFF_GRID_PADDING_FACTOR,
+    gridSizeLat * CLOUD_PUFF_GRID_PADDING_FACTOR,
+  );
   const threshold = 0.46 - normalizedDensity * 0.16;
-  const puffs: CloudPuffDescriptor[] = [];
+  const candidates: Array<CloudPuffDescriptor & { selectionWeight: number }> = [];
 
   const startColumn = Math.floor(paddedBounds.west / gridSizeLng);
   const endColumn = Math.ceil(paddedBounds.east / gridSizeLng);
@@ -102,7 +109,7 @@ export const createWorldAnchoredCloudPuffs = (
       const sizeNoise = hash3D(column, row, 4);
       const opacityNoise = hash3D(column, row, 5);
 
-      puffs.push({
+      candidates.push({
         id: `${column}:${row}`,
         center: [centerLng, centerLat],
         radiusLng: gridSizeLng * (0.9 + sizeNoise * 1.25),
@@ -113,9 +120,19 @@ export const createWorldAnchoredCloudPuffs = (
         stretchY: 0.82 + hash3D(column, row, 8) * 0.68,
         rotation: (hash3D(column, row, 9) - 0.5) * 0.32,
         highlight: 0.2 + hash3D(column, row, 10) * 0.15,
+        selectionWeight: hash3D(column, row, 12),
       });
     }
   }
 
-  return puffs;
+  return candidates
+    .sort((left, right) => {
+      if (right.selectionWeight !== left.selectionWeight) {
+        return right.selectionWeight - left.selectionWeight;
+      }
+
+      return left.id.localeCompare(right.id);
+    })
+    .slice(0, MAX_CLOUD_PUFFS)
+    .map(({ selectionWeight, ...puff }) => puff);
 };
