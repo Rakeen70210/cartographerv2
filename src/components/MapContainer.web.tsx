@@ -15,7 +15,7 @@ import { saveViewport, loadViewport } from '../store/persistence';
 import { getDatabaseService } from '../database/services';
 import { spatialCacheService } from '../services/spatialCacheService';
 import { getFogService } from '../services/fogService';
-import { BoundingBox, FogGeometry } from '../types/fog';
+import { BoundingBox } from '../types/fog';
 import { MapboxCloudLayer } from '../services/cloudSystem/integration';
 import { cloudFogIntegration, fogSystemCompatibility } from '../services/cloudSystem/integration';
 import { getMockCloudRenderingEngine } from '../services/cloudSystem/MockCloudRenderingEngine';
@@ -24,6 +24,8 @@ import { WebTextureManager } from '../services/cloudSystem/textures/WebTextureMa
 import { WebGLFeatureDetector } from '../services/cloudSystem/performance/WebGLFeatureDetector';
 import { ExplorationArea } from '../types/exploration';
 import { fogLocationIntegrationService } from '../services';
+import { CloudFogCanvasOverlay } from './CloudFogCanvasOverlay';
+import { useCloudFogVisualParams } from '../hooks/useCloudFogVisualParams';
 
 type MapboxMap = {
   addControl: (control: unknown, position?: string) => void;
@@ -44,11 +46,13 @@ type MapboxMap = {
   };
   getCenter: () => { lng: number; lat: number };
   getLayer: (id: string) => Record<string, unknown> | undefined;
-  getSource: (id: string) => { setData: (data: FogGeometry) => void } | undefined;
+  getSource: (id: string) => { setData: (data: any) => void } | undefined;
   getZoom: () => number;
   getBearing: () => number;
   getPitch: () => number;
   on: (event: string, handler: (...args: any[]) => void) => void;
+  off?: (event: string, handler: (...args: any[]) => void) => void;
+  project: (coordinate: [number, number]) => { x: number; y: number };
   remove: () => void;
   removeLayer: (id: string) => void;
   removeSource: (id: string) => void;
@@ -286,8 +290,10 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const { exploredAreas } = useAppSelector(state => state.exploration);
   const fogVisible = useAppSelector(state => state.fog.isVisible);
   const fogOpacity = useAppSelector(state => state.fog.opacity);
+  const cloudDensity = useAppSelector(state => state.fog.cloudDensity);
   const cloudSystemEnabled = useAppSelector(state => state.fog.cloudSystemEnabled);
   const cloudSystemError = useAppSelector(state => state.fog.cloudSystemError);
+  const visualParams = useCloudFogVisualParams(fogOpacity);
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapboxMap | null>(null);
@@ -385,7 +391,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
       return;
     }
     map.setLayoutProperty(FOG_LAYER_ID, 'visibility', fogVisibleRef.current ? 'visible' : 'none');
-    map.setPaintProperty(FOG_LAYER_ID, 'fill-opacity', ['*', ['coalesce', ['get', 'opacity'], 1], fogOpacityRef.current]);
+    map.setPaintProperty(FOG_LAYER_ID, 'fill-opacity', 0);
   }, []);
 
   const updateFogLayer = useCallback((fogBoundsOverride?: BoundingBox, exploredAreasOverride?: ExplorationStateArea[]) => {
@@ -399,7 +405,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
       zoom,
       fogBounds
     );
-
     const existingSource = map.getSource(FOG_SOURCE_ID);
     if (existingSource) {
       existingSource.setData(fogGeometry);
@@ -425,11 +430,11 @@ const MapContainer: React.FC<MapContainerProps> = ({
           'interpolate',
           ['linear'],
           ['zoom'],
-          0, '#263341',
-          6, '#1f2a36',
-          12, '#18222d',
+          0, '#f2f5fb',
+          6, '#edf2f8',
+          12, '#e7eef6',
         ],
-        'fill-opacity': ['*', ['coalesce', ['get', 'opacity'], 1], fogOpacityRef.current],
+        'fill-opacity': 0,
       },
     });
 
@@ -858,6 +863,14 @@ const MapContainer: React.FC<MapContainerProps> = ({
   return (
     <View style={styles.container}>
       <div ref={mapContainerRef} style={mapDivStyle} />
+      <CloudFogCanvasOverlay
+        map={mapRef.current}
+        visible={fogVisible}
+        cloudDensity={cloudDensity}
+        zoomLevel={viewport.zoom}
+        visualParams={visualParams}
+        exploredAreas={exploredAreas}
+      />
     </View>
   );
 };

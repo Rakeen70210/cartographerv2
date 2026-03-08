@@ -15,10 +15,10 @@ export interface BlurMaskConfig {
  * Default blur mask configuration for natural fog edges
  */
 export const DEFAULT_BLUR_CONFIG: BlurMaskConfig = {
-  blurRadius: 20,
+  blurRadius: 28,
   blurStyle: BlurStyle.Normal,
   blendMode: BlendMode.DstOut, // Cut out explored areas from fog
-  featherIntensity: 0.7
+  featherIntensity: 0.9
 };
 
 /**
@@ -73,6 +73,7 @@ export class BlurMaskManager {
 
     // Cache the result
     this.cachedPaint = paint;
+    this.lastConfig = { ...config };
 
     return paint;
   }
