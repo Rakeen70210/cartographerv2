@@ -11,6 +11,16 @@ export interface SkiaCloudUniforms {
   u_wind_offset: [number, number];
   u_cloud_density: number;
   u_animation_speed: number;
+  u_fog_opacity: number;
+  u_base_haze: number;
+  u_edge_softness: number;
+  u_haze_scale: number;
+  u_mass_scale: number;
+  u_detail_scale: number;
+  u_cloud_primary_color: [number, number, number];
+  u_cloud_secondary_color: [number, number, number];
+  u_cloud_highlight_color: [number, number, number];
+  u_cloud_ambient_color: [number, number, number];
 }
 
 /**
@@ -24,6 +34,16 @@ uniform float u_zoom;
 uniform vec2 u_wind_offset;
 uniform float u_cloud_density;
 uniform float u_animation_speed;
+uniform float u_fog_opacity;
+uniform float u_base_haze;
+uniform float u_edge_softness;
+uniform float u_haze_scale;
+uniform float u_mass_scale;
+uniform float u_detail_scale;
+uniform vec3 u_cloud_primary_color;
+uniform vec3 u_cloud_secondary_color;
+uniform vec3 u_cloud_highlight_color;
+uniform vec3 u_cloud_ambient_color;
 
 // --------------------------------------------------------------------------
 // FLUFFY CUMULUS CLOUD SHADER (Bright White Fog of War)
@@ -104,9 +124,9 @@ float calculateCloudDensity(vec2 uv, float time) {
     float detail = detailNoise(p * 2.0, t);
     d = d + detail * 0.1;
     
-    // 5. High contrast shaping for distinct fluffy clouds
-    d = pow(d, 1.3);
-    d = smoothstep(0.25, 0.85, d);
+    // 5. Softer shaping for broad cloud sheets instead of isolated puffs
+    d = pow(d, 1.05);
+    d = smoothstep(0.18, 0.82, d);
     
     // 6. Variable base - some areas fully transparent, others fully opaque
     return clamp(d, 0.0, 1.0);
@@ -118,6 +138,9 @@ vec4 main(vec2 fragCoord) {
     uv.x *= u_resolution.x / u_resolution.y;
     
     float density = calculateCloudDensity(uv, u_time);
+    float hazeDensity = calculateCloudDensity(uv * u_haze_scale + vec2(0.05, -0.02), u_time * 0.32);
+    float massDensity = calculateCloudDensity(uv * u_mass_scale, u_time * 0.9);
+    float detailDensity = calculateCloudDensity(uv * u_detail_scale + vec2(-0.03, 0.02), u_time * 0.85);
     
     // Enhanced volumetric lighting - sample multiple neighbors for 3D effect
     float d2 = calculateCloudDensity(uv + vec2(-0.02, -0.02), u_time);
@@ -128,32 +151,33 @@ vec4 main(vec2 fragCoord) {
     float backlight = d3 - density;
     
     // Highlight on cloud tops (sun from above-left)
-    float highlight = max(0.0, delta) * 3.0;
+    float highlight = max(0.0, delta) * 1.25;
     // Backlight for depth and rim lighting
-    float backlightAmount = max(0.0, backlight) * 1.2;
+    float backlightAmount = max(0.0, backlight) * 0.45;
     
-    // Colors: BRIGHT WHITE FLUFFY CLOUDS
-    vec3 shadow = vec3(0.82, 0.85, 0.92);   // Soft blue-gray shadow
-    vec3 mid    = vec3(0.94, 0.95, 0.97);   // Near-white body  
-    vec3 high   = vec3(1.0, 1.0, 1.0);      // Pure white highlights
-    vec3 glow   = vec3(0.96, 0.97, 1.0);    // Cool backlight glow
+    float veil = smoothstep(0.10, 0.72, hazeDensity) * u_base_haze;
+    float cloudBody = smoothstep(0.16, 0.76, massDensity);
+    float cloudDetail = smoothstep(0.46, 0.88, detailDensity) * 0.22;
+    float coverage = clamp(veil * 0.92 + cloudBody * 0.82 + cloudDetail * 0.35, 0.0, 1.0);
+    float softenedDensity = smoothstep(0.04, max(0.38, u_edge_softness), coverage);
     
-    // Build up cloud color with clear transitions
-    vec3 color = mix(shadow, mid, smoothstep(0.2, 0.5, density));
-    color = mix(color, high, smoothstep(0.5, 0.85, density));
+    vec3 shadow = mix(u_cloud_secondary_color, u_cloud_ambient_color, 0.55);
+    vec3 mid = mix(u_cloud_ambient_color, u_cloud_primary_color, smoothstep(0.10, 0.74, coverage));
+    vec3 high = u_cloud_highlight_color;
+    vec3 glow = mix(u_cloud_highlight_color, vec3(1.0), 0.22);
     
-    // Add highlight on edges catching "sunlight"
-    color = mix(color, high, clamp(highlight, 0.0, 0.5));
+    vec3 color = mix(shadow, mid, smoothstep(0.06, 0.68, softenedDensity));
+    color = mix(color, high, smoothstep(0.62, 0.96, softenedDensity) * 0.38);
     
-    // Add subtle backlight glow for depth
-    color = mix(color, glow, backlightAmount * 0.25);
+    // Keep top-lighting subtle; the reference is soft and low-contrast.
+    color = mix(color, high, clamp(highlight, 0.0, 0.18));
+    color = mix(color, glow, clamp(backlightAmount, 0.0, 0.1));
     
-    // Alpha: More opaque clouds with soft edges
-    // Higher minimum alpha to ensure clouds obscure the background
-    float alpha = smoothstep(0.0, 0.4, density);
-    // Ensure minimum 60% opacity where clouds exist, max 96%
-    alpha = 0.6 + alpha * 0.36;
-    alpha = clamp(alpha * density, 0.0, 0.96);
+    float atmosphericVeil = veil * 0.35;
+    float cloudAlpha = smoothstep(0.05, max(0.42, u_edge_softness), softenedDensity);
+    float alpha = atmosphericVeil + cloudAlpha * (0.42 + coverage * 0.52);
+    // u_fog_opacity is the sole external scalar; no extra compress so dense clouds can reach 0.88+
+    alpha = clamp(alpha * u_fog_opacity, 0.0, 0.92);
     
     return vec4(color, alpha);
 }
@@ -169,12 +193,31 @@ export const defaultSkiaCloudUniforms: SkiaCloudUniforms = {
   u_wind_offset: [0.0, 0.0],
   u_cloud_density: 0.7,
   u_animation_speed: 1.5,
+  u_fog_opacity: 0.82,
+  u_base_haze: 0.52,
+  u_edge_softness: 0.96,
+  u_haze_scale: 0.46,
+  u_mass_scale: 0.84,
+  u_detail_scale: 1.22,
+  u_cloud_primary_color: [0.94, 0.95, 0.97],
+  u_cloud_secondary_color: [0.79, 0.84, 0.90],
+  u_cloud_highlight_color: [1.0, 1.0, 1.0],
+  u_cloud_ambient_color: [0.90, 0.93, 0.97],
 };
 
 /**
  * Uniform validation and bounds checking for performance safety
  */
 export function validateSkiaCloudUniforms(uniforms: Partial<SkiaCloudUniforms>): SkiaCloudUniforms {
+  const clampColor = (value: [number, number, number] | undefined, fallback: [number, number, number]): [number, number, number] => {
+    const source = Array.isArray(value) && value.length === 3 ? value : fallback;
+    return [
+      Math.max(0, Math.min(1, source[0])),
+      Math.max(0, Math.min(1, source[1])),
+      Math.max(0, Math.min(1, source[2])),
+    ];
+  };
+
   return {
     u_time: Math.max(0, uniforms.u_time ?? defaultSkiaCloudUniforms.u_time),
     u_resolution: uniforms.u_resolution ?? defaultSkiaCloudUniforms.u_resolution,
@@ -182,6 +225,16 @@ export function validateSkiaCloudUniforms(uniforms: Partial<SkiaCloudUniforms>):
     u_wind_offset: uniforms.u_wind_offset ?? defaultSkiaCloudUniforms.u_wind_offset,
     u_cloud_density: Math.max(0, Math.min(1, uniforms.u_cloud_density ?? defaultSkiaCloudUniforms.u_cloud_density)),
     u_animation_speed: Math.max(0, Math.min(3, uniforms.u_animation_speed ?? defaultSkiaCloudUniforms.u_animation_speed)),
+    u_fog_opacity: Math.max(0, Math.min(1, uniforms.u_fog_opacity ?? defaultSkiaCloudUniforms.u_fog_opacity)),
+    u_base_haze: Math.max(0, Math.min(1, uniforms.u_base_haze ?? defaultSkiaCloudUniforms.u_base_haze)),
+    u_edge_softness: Math.max(0.1, Math.min(1.5, uniforms.u_edge_softness ?? defaultSkiaCloudUniforms.u_edge_softness)),
+    u_haze_scale: Math.max(0.1, Math.min(3, uniforms.u_haze_scale ?? defaultSkiaCloudUniforms.u_haze_scale)),
+    u_mass_scale: Math.max(0.1, Math.min(3, uniforms.u_mass_scale ?? defaultSkiaCloudUniforms.u_mass_scale)),
+    u_detail_scale: Math.max(0.1, Math.min(4, uniforms.u_detail_scale ?? defaultSkiaCloudUniforms.u_detail_scale)),
+    u_cloud_primary_color: clampColor(uniforms.u_cloud_primary_color, defaultSkiaCloudUniforms.u_cloud_primary_color),
+    u_cloud_secondary_color: clampColor(uniforms.u_cloud_secondary_color, defaultSkiaCloudUniforms.u_cloud_secondary_color),
+    u_cloud_highlight_color: clampColor(uniforms.u_cloud_highlight_color, defaultSkiaCloudUniforms.u_cloud_highlight_color),
+    u_cloud_ambient_color: clampColor(uniforms.u_cloud_ambient_color, defaultSkiaCloudUniforms.u_cloud_ambient_color),
   };
 }
 
