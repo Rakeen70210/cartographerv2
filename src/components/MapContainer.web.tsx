@@ -15,14 +15,7 @@ import { saveViewport, loadViewport } from '../store/persistence';
 import { getDatabaseService } from '../database/services';
 import { spatialCacheService } from '../services/spatialCacheService';
 import { getFogService } from '../services/fogService';
-import { BoundingBox } from '../types/fog';
-import { MapboxCloudLayer } from '../services/cloudSystem/integration';
-import { cloudFogIntegration, fogSystemCompatibility } from '../services/cloudSystem/integration';
-import { getMockCloudRenderingEngine } from '../services/cloudSystem/MockCloudRenderingEngine';
-import { ShaderSystem } from '../services/cloudSystem/shaders/ShaderSystem';
-import { WebTextureManager } from '../services/cloudSystem/textures/WebTextureManager';
-import { WebGLFeatureDetector } from '../services/cloudSystem/performance/WebGLFeatureDetector';
-import { ExplorationArea } from '../types/exploration';
+import { BoundingBox, FogGeometry } from '../types/fog';
 import { fogLocationIntegrationService } from '../services';
 import { CloudFogCanvasOverlay } from './CloudFogCanvasOverlay';
 import { useCloudFogVisualParams } from '../hooks/useCloudFogVisualParams';
@@ -92,7 +85,6 @@ const MAPBOX_GL_JS_URL = 'https://api.mapbox.com/mapbox-gl-js/v3.15.0/mapbox-gl.
 const MAPBOX_GL_CSS_URL = 'https://api.mapbox.com/mapbox-gl-js/v3.15.0/mapbox-gl.css';
 const FOG_SOURCE_ID = 'fog-overlay';
 const FOG_LAYER_ID = 'fog-overlay-layer';
-const CLOUD_LAYER_ID = 'cloud-system-layer';
 const MAX_MERCATOR_LATITUDE = 85.051129;
 const MOVE_REFRESH_THROTTLE_MS = 100;
 const FOG_COVERAGE_BUFFER_RATIO = 0.75;
@@ -291,8 +283,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const fogVisible = useAppSelector(state => state.fog.isVisible);
   const fogOpacity = useAppSelector(state => state.fog.opacity);
   const cloudDensity = useAppSelector(state => state.fog.cloudDensity);
-  const cloudSystemEnabled = useAppSelector(state => state.fog.cloudSystemEnabled);
-  const cloudSystemError = useAppSelector(state => state.fog.cloudSystemError);
   const visualParams = useCloudFogVisualParams(fogOpacity);
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -308,11 +298,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const explorationCoverageBoundsRef = useRef<BoundingBox | null>(null);
   const databaseService = getDatabaseService();
   const fogServiceRef = useRef(getFogService());
-  const cloudLayerRef = useRef<MapboxCloudLayer | null>(null);
-  const cloudEngineRef = useRef(getMockCloudRenderingEngine());
-  const shaderSystemRef = useRef(new ShaderSystem());
-  const textureManagerRef = useRef(new WebTextureManager());
-  const [cloudSystemInitialized, setCloudSystemInitialized] = useState(false);
+  const [fogGeometry, setFogGeometry] = useState<FogGeometry | null>(null);
 
   const mapStyle = useMemo(() => MAPBOX_CONFIG.DEFAULT_STYLE, []);
 
@@ -321,8 +307,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const exploredAreasRef = useRef(exploredAreas);
   const fogVisibleRef = useRef(fogVisible);
   const fogOpacityRef = useRef(fogOpacity);
-  const cloudSystemEnabledRef = useRef(cloudSystemEnabled);
-  const cloudSystemErrorRef = useRef(cloudSystemError);
   const viewportRef = useRef(viewport);
 
   useEffect(() => {
@@ -344,14 +328,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
   useEffect(() => {
     fogOpacityRef.current = fogOpacity;
   }, [fogOpacity]);
-
-  useEffect(() => {
-    cloudSystemEnabledRef.current = cloudSystemEnabled;
-  }, [cloudSystemEnabled]);
-
-  useEffect(() => {
-    cloudSystemErrorRef.current = cloudSystemError;
-  }, [cloudSystemError]);
 
   useEffect(() => {
     viewportRef.current = viewport;
@@ -405,6 +381,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
       zoom,
       fogBounds
     );
+    setFogGeometry(fogGeometry);
     const existingSource = map.getSource(FOG_SOURCE_ID);
     if (existingSource) {
       existingSource.setData(fogGeometry);
@@ -481,45 +458,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
     return true;
   }, [loadExplorationAreasForBounds, updateFogLayer]);
-
-  const initializeCloudLayer = useCallback(() => {
-    if (!mapRef.current || cloudLayerRef.current) {
-      return;
-    }
-
-    const detector = WebGLFeatureDetector.getInstance();
-    const capabilities = detector.detectCapabilities();
-    if (!capabilities) {
-      fogSystemCompatibility.configure({ preferCloudSystem: false });
-      return;
-    }
-
-    try {
-      const cloudLayer = new MapboxCloudLayer({
-        id: CLOUD_LAYER_ID,
-        cloudEngine: cloudEngineRef.current,
-        shaderSystem: shaderSystemRef.current,
-        textureManager: textureManagerRef.current,
-        zIndex: 110,
-      });
-
-      mapRef.current.addLayer(cloudLayer as unknown as Record<string, unknown>);
-      cloudLayerRef.current = cloudLayer;
-
-      const shouldUseCloudSystem = cloudSystemEnabledRef.current && !cloudSystemErrorRef.current;
-      cloudLayer.setVisible(shouldUseCloudSystem);
-      cloudFogIntegration.configure({ enableCloudSystem: shouldUseCloudSystem });
-      fogSystemCompatibility.configure({ preferCloudSystem: shouldUseCloudSystem });
-
-      cloudFogIntegration.setCloudRenderingEngine(cloudEngineRef.current);
-      fogSystemCompatibility.setCloudRenderingEngine(cloudEngineRef.current);
-
-      setCloudSystemInitialized(true);
-    } catch (error) {
-      console.error('Failed to initialize cloud layer:', error);
-      fogSystemCompatibility.configure({ preferCloudSystem: false });
-    }
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -644,7 +582,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
           dispatch(setMapReady(true));
           dispatch(setMapError(null));
           await refreshCoverage(true);
-          initializeCloudLayer();
         };
 
         map.on('load', () => {
@@ -732,9 +669,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
       fogCoverageBoundsRef.current = null;
       explorationCoverageBoundsRef.current = null;
       if (mapRef.current) {
-        if (mapRef.current.getLayer(CLOUD_LAYER_ID)) {
-          mapRef.current.removeLayer(CLOUD_LAYER_ID);
-        }
         if (mapRef.current.getLayer(FOG_LAYER_ID)) {
           mapRef.current.removeLayer(FOG_LAYER_ID);
         }
@@ -744,12 +678,9 @@ const MapContainer: React.FC<MapContainerProps> = ({
         mapRef.current.remove();
         mapRef.current = null;
       }
-      cloudLayerRef.current = null;
-      cloudFogIntegration.stopCloudSystem().catch(error => {
-        console.error('Error stopping cloud system:', error);
-      });
+      setFogGeometry(null);
     };
-  }, [dispatch, initializeCloudLayer, initialCenter, initialZoom, mapStyle, refreshCoverage, updateFogLayer]);
+  }, [dispatch, initialCenter, initialZoom, mapStyle, refreshCoverage, updateFogLayer]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -799,39 +730,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
   }, [applyFogVisibility, fogVisible, fogOpacity]);
 
   useEffect(() => {
-    if (!cloudLayerRef.current) return;
-
-    const mappedExplorationAreas: ExplorationArea[] = exploredAreas.map(area => ({
-      id: area.id,
-      center: area.center,
-      radius: area.radius,
-      exploredAt: new Date(area.exploredAt),
-      clearingProgress: 1,
-    }));
-
-    cloudLayerRef.current.updateExploredAreas(mappedExplorationAreas);
-  }, [exploredAreas]);
-
-  useEffect(() => {
-    if (!cloudLayerRef.current) return;
-    const shouldShow = cloudSystemEnabled && !cloudSystemError;
-    cloudLayerRef.current.setVisible(shouldShow);
-    cloudFogIntegration.configure({ enableCloudSystem: shouldShow });
-    fogSystemCompatibility.configure({ preferCloudSystem: shouldShow });
-
-    if (shouldShow) {
-      cloudFogIntegration.startCloudSystem().catch(error => {
-        console.error('Failed to start cloud system:', error);
-      });
-      return;
-    }
-
-    cloudFogIntegration.stopCloudSystem().catch(error => {
-      console.error('Failed to stop cloud system:', error);
-    });
-  }, [cloudSystemEnabled, cloudSystemError]);
-
-  useEffect(() => {
     let isMounted = true;
 
     const handleCacheUpdate = () => {
@@ -869,6 +767,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
         cloudDensity={cloudDensity}
         zoomLevel={viewport.zoom}
         visualParams={visualParams}
+        fogGeometry={fogGeometry}
         exploredAreas={exploredAreas}
       />
     </View>

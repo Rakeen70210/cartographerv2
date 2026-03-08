@@ -1,5 +1,6 @@
 import { FogGeometry } from '../../types/fog';
 import {
+  MAX_CLOUD_PUFFS,
   createWorldAnchoredCloudPuffs,
   projectFogGeometryToScreen,
 } from '../CloudFogCanvasUtils';
@@ -49,6 +50,18 @@ describe('CloudFogCanvasUtils', () => {
 
     expect(first).toEqual(second);
     expect(first.length).toBeGreaterThan(0);
+    expect(first.length).toBeLessThanOrEqual(MAX_CLOUD_PUFFS);
+  });
+
+  it('should cap dense puff generation to the supported maximum', () => {
+    const puffs = createWorldAnchoredCloudPuffs({
+      north: 42,
+      south: 32,
+      east: -110,
+      west: -124,
+    }, 8, 1, 0);
+
+    expect(puffs).toHaveLength(MAX_CLOUD_PUFFS);
   });
 
   it('should keep cloud ids stable across a small pan', () => {
