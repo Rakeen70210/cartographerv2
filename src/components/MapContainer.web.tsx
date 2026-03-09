@@ -90,6 +90,7 @@ const MOVE_REFRESH_THROTTLE_MS = 100;
 const FOG_COVERAGE_BUFFER_RATIO = 0.75;
 const EXPLORATION_COVERAGE_BUFFER_RATIO = 0.5;
 const COVERAGE_REFRESH_THRESHOLD_RATIO = 0.2;
+const SCRIPT_LOAD_TIMEOUT_MS = 10000;
 
 type QueryBounds = { minX: number; minY: number; maxX: number; maxY: number };
 type ExplorationStateArea = {
@@ -100,22 +101,67 @@ type ExplorationStateArea = {
   accuracy?: number;
 };
 
+const createMapboxScriptLoaderError = () => new Error('Failed to load Mapbox GL JS');
+
+const attachScriptLoadHandlers = (
+  script: HTMLScriptElement,
+  resolve: () => void,
+  reject: (error: Error) => void
+) => {
+  let settled = false;
+
+  const finish = (callback: () => void) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    script.removeEventListener('load', onLoad);
+    script.removeEventListener('error', onError);
+    clearTimeout(timeoutId);
+    callback();
+  };
+
+  const onLoad = () => finish(() => {
+    script.dataset.loadState = 'loaded';
+    resolve();
+  });
+
+  const onError = () => finish(() => {
+    script.dataset.loadState = 'failed';
+    reject(createMapboxScriptLoaderError());
+  });
+
+  const timeoutId = window.setTimeout(() => finish(() => {
+    script.dataset.loadState = 'failed';
+    reject(new Error(`Timed out loading Mapbox GL JS after ${SCRIPT_LOAD_TIMEOUT_MS}ms`));
+  }), SCRIPT_LOAD_TIMEOUT_MS);
+
+  script.addEventListener('load', onLoad);
+  script.addEventListener('error', onError);
+};
+
 const loadScript = (src: string) =>
   new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
     if (existing) {
-      if (window.mapboxgl) {
+      if (window.mapboxgl || existing.dataset.loadState === 'loaded') {
         resolve();
         return;
       }
-      existing.addEventListener('load', () => resolve());
-      return;
+
+      if (existing.dataset.loadState === 'failed') {
+        existing.remove();
+      } else {
+        attachScriptLoadHandlers(existing, resolve, reject);
+        return;
+      }
     }
+
     const script = document.createElement('script');
     script.src = src;
     script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Mapbox GL JS'));
+    script.dataset.loadState = 'loading';
+    attachScriptLoadHandlers(script, resolve, reject);
     document.body.appendChild(script);
   });
 

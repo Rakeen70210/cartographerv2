@@ -421,21 +421,9 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
       return null;
     }
   }, [normalizedExploredAreas, dissipationAnimations, viewport, zoomLevel, shaderInitialized, maskingSystem]);
-
-
-
   // Get active shader, texture, and uniforms for rendering
   const activeShader = shaderInitialized ? shaderSystem.getActiveShader() : null;
   const uniformsForSkia = shaderInitialized ? shaderSystem.getUniformsForSkia() : {};
-
-  // Debug logging for fog rendering
-  console.log('🌫️ SkiaFogOverlay render:', {
-    shaderInitialized,
-    hasActiveShader: !!activeShader,
-    viewportSize: `${viewport.width}x${viewport.height}`,
-    exploredAreasCount: exploredAreas?.length ?? 0,
-    fogOpacity
-  });
 
   if (activeShader && __DEV__) {
     console.debug(`🌫️ Rendering fog with ${shaderSystem.getShaderComplexity()} complexity`);
