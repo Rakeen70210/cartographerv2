@@ -546,7 +546,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
           return;
         }
 
-        map.addControl(new mapboxgl.NavigationControl(), 'top-right');
         map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-right');
 
         const geolocate = new mapboxgl.GeolocateControl({
