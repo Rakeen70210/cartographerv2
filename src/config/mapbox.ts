@@ -1,21 +1,29 @@
 // Mapbox configuration
 // Access token is loaded from environment variables
 
+export const MAPBOX_STYLE_URLS = {
+  streets: 'mapbox://styles/mapbox/streets-v12',
+  dark: 'mapbox://styles/mapbox/dark-v11',
+  light: 'mapbox://styles/mapbox/light-v11',
+  outdoors: 'mapbox://styles/mapbox/outdoors-v12',
+  satellite: 'mapbox://styles/mapbox/satellite-v9',
+} as const;
+
 export const MAPBOX_CONFIG = {
   // Mapbox access token from environment variables
   // Get one from https://account.mapbox.com/access-tokens/
   ACCESS_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
-  
+
   // Default map settings
-  DEFAULT_STYLE: 'mapbox://styles/mapbox/streets-v12', // Google Maps-like style
+  DEFAULT_STYLE: MAPBOX_STYLE_URLS.streets, // Google Maps-like style
   DEFAULT_CENTER: [0, 0] as [number, number], // World center
   DEFAULT_ZOOM: 2,
   MIN_ZOOM: 0,
   MAX_ZOOM: 20,
-  
+
   // Animation settings
   ANIMATION_DURATION: 1000,
-  
+
   // UI settings
   COMPASS_ENABLED: true,
   SCALE_BAR_ENABLED: false,
