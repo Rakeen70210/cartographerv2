@@ -1,6 +1,8 @@
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getDatabaseService } from '../database/services';
+import { EXPLORATION_TILE_ZOOM } from '../config';
+import { tilesForCircle } from '../utils/tiles';
 
 export interface NetworkState {
   isConnected: boolean;
@@ -316,6 +318,13 @@ export class OfflineService {
     switch (item.type) {
       case 'exploration':
         await this.databaseService.createExploredArea(item.data);
+        try {
+          const tiles = tilesForCircle(item.data.latitude, item.data.longitude, item.data.radius, EXPLORATION_TILE_ZOOM)
+            .map(tile => ({ ...tile, explored_at: item.data.explored_at }));
+          await this.databaseService.upsertVisitedTiles(tiles);
+        } catch (tileError) {
+          console.warn('Failed to record visited tiles for offline exploration item:', tileError);
+        }
         break;
       case 'achievement':
         await this.databaseService.createAchievement(item.data);

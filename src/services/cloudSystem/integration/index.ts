@@ -11,7 +11,6 @@ export { MapEventHandler } from './MapEventHandler';
 export { CloudPatchManager } from './CloudPatchManager';
 export { CloudDissipationIntegration, CloudDissipationIntegrationUtils } from './CloudDissipationIntegration';
 export { CloudFogIntegration, cloudFogIntegration } from './CloudFogIntegration';
-export { ExplorationStateSynchronizer, explorationStateSynchronizer } from './ExplorationStateSynchronizer';
 export { FogSystemCompatibility, fogSystemCompatibility } from './FogSystemCompatibility';
 export { ExplorationMaskManager } from './ExplorationMaskManager';
 export { BlurMaskManager, DEFAULT_BLUR_CONFIG } from './BlurMaskManager';
@@ -55,12 +54,6 @@ export type {
   CloudFogIntegrationConfig,
   CloudSystemStatus
 } from './CloudFogIntegration';
-
-export type {
-  SynchronizationConfig,
-  SynchronizationResult,
-  ExplorationDataConflict
-} from './ExplorationStateSynchronizer';
 
 export type {
   CompatibilityConfig,

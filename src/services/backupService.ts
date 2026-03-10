@@ -1,17 +1,21 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
-import { getDatabaseService, ExploredArea, UserStats, Achievement } from '../database/services';
+import { getDatabaseService, ExploredArea, UserStats, Achievement, VisitedTile } from '../database/services';
 import { getDatabaseManager } from '../database/database';
+import { EXPLORATION_TILE_ZOOM } from '../config';
+import { tilesForCircle } from '../utils/tiles';
 
 export interface BackupData {
   version: string;
   timestamp: string;
   exploredAreas: ExploredArea[];
+  visitedTiles?: VisitedTile[];
   userStats: UserStats | null;
   achievements: Achievement[];
   metadata: {
     totalAreas: number;
+    totalTiles?: number;
     exportedAt: string;
     appVersion: string;
   };
@@ -75,10 +79,12 @@ export class BackupService {
         version: '1.0.0',
         timestamp: new Date().toISOString(),
         exploredAreas: exportedData.exploredAreas,
+        visitedTiles: exportedData.visitedTiles,
         userStats: exportedData.userStats,
         achievements: exportedData.achievements,
         metadata: {
           totalAreas: exportedData.exploredAreas.length,
+          totalTiles: exportedData.visitedTiles?.length || 0,
           exportedAt: new Date().toISOString(),
           appVersion: '1.0.0' // This should come from app config
         }
@@ -151,6 +157,10 @@ export class BackupService {
         errors.push('Invalid explored areas data');
       }
 
+      if (backupData.visitedTiles !== undefined && !Array.isArray(backupData.visitedTiles)) {
+        errors.push('Invalid visited tiles data');
+      }
+
       if (!Array.isArray(backupData.achievements)) {
         errors.push('Invalid achievements data');
       }
@@ -189,6 +199,18 @@ export class BackupService {
           }
           if (typeof achievement.progress !== 'number') {
             errors.push(`Invalid progress in achievement ${index}`);
+          }
+        });
+      }
+
+      // Validate visited tiles structure (optional)
+      if (Array.isArray(backupData.visitedTiles)) {
+        backupData.visitedTiles.forEach((tile: any, index: number) => {
+          if (typeof tile.z !== 'number' || typeof tile.x !== 'number' || typeof tile.y !== 'number') {
+            errors.push(`Invalid tile coordinates in visited tile ${index}`);
+          }
+          if (!tile.explored_at) {
+            errors.push(`Missing explored_at in visited tile ${index}`);
           }
         });
       }
@@ -304,9 +326,19 @@ export class BackupService {
           // Replace all data
           await this.databaseService.importData({
             exploredAreas: backupData.exploredAreas,
+            visitedTiles: backupData.visitedTiles,
             userStats: backupData.userStats,
             achievements: backupData.achievements
           });
+
+          // If tile data isn't present, derive it from explored areas so tile mode still works.
+          if (!backupData.visitedTiles || backupData.visitedTiles.length === 0) {
+            const tiles = backupData.exploredAreas.flatMap(area =>
+              tilesForCircle(area.latitude, area.longitude, area.radius, EXPLORATION_TILE_ZOOM)
+                .map(tile => ({ ...tile, explored_at: area.explored_at }))
+            );
+            await this.databaseService.upsertVisitedTiles(tiles);
+          }
         } else if (mergeMode === 'merge') {
           // Merge data (add new, update existing)
           await this.mergeBackupData(backupData);
@@ -342,6 +374,25 @@ export class BackupService {
     // Add new explored areas
     for (const area of newAreas) {
       await this.databaseService.createExploredArea(area);
+      try {
+        const tiles = tilesForCircle(area.latitude, area.longitude, area.radius, EXPLORATION_TILE_ZOOM)
+          .map(tile => ({ ...tile, explored_at: area.explored_at }));
+        await this.databaseService.upsertVisitedTiles(tiles);
+      } catch (tileError) {
+        console.warn('Failed to record visited tiles while merging explored area:', tileError);
+      }
+    }
+
+    // Merge visited tiles (set-union; keep earliest explored_at)
+    if (backupData.visitedTiles && backupData.visitedTiles.length > 0) {
+      await this.databaseService.upsertVisitedTiles(
+        backupData.visitedTiles.map(tile => ({
+          z: tile.z,
+          x: tile.x,
+          y: tile.y,
+          explored_at: tile.explored_at
+        }))
+      );
     }
 
     // Merge user stats (take maximum values)

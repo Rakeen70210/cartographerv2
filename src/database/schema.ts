@@ -39,9 +39,30 @@ export const CREATE_SPATIAL_INDEX = `
   ON explored_areas(latitude, longitude);
 `;
 
+export const CREATE_VISITED_TILES_TABLE = `
+  CREATE TABLE IF NOT EXISTS visited_tiles (
+    z INTEGER NOT NULL,
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    explored_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (z, x, y)
+  );
+`;
+
+export const CREATE_VISITED_TILES_INDEX = `
+  CREATE INDEX IF NOT EXISTS idx_visited_tiles_zxy
+  ON visited_tiles(z, x, y);
+`;
+
 export const SCHEMA_QUERIES = [
   CREATE_EXPLORED_AREAS_TABLE,
   CREATE_USER_STATS_TABLE,
   CREATE_ACHIEVEMENTS_TABLE,
   CREATE_SPATIAL_INDEX,
+];
+
+export const MIGRATION_V2_QUERIES = [
+  CREATE_VISITED_TILES_TABLE,
+  CREATE_VISITED_TILES_INDEX,
 ];
