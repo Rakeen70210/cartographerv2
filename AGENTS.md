@@ -1,3 +1,7 @@
+# Project Overview
+
+- This is a cross-platform app that encourages exploring the world. A beautiful map is displayed that is originally covered in fog, and as the user explores the fog lifts to reveal the map underneath.
+
 # Repository Guidelines
 
 ## Project Structure & Module Organization

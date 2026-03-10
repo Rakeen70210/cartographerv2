@@ -7,8 +7,10 @@ import { store } from './src/store/store';
 import { TabNavigation, ErrorBoundary } from './src/components';
 import { validateAppConfiguration } from './src/config';
 import { initializeDatabaseOnFirstLaunch, InitializationResult } from './src/database';
-import { backgroundLocationService, getPerformanceMonitorService, getMemoryManagementService, initializeServices, compactionService, spatialCacheService } from './src/services';
-import { explorationStateSynchronizer } from './src/services/cloudSystem/integration';
+import { backgroundLocationService, getPerformanceMonitorService, getMemoryManagementService, initializeServices, compactionService, spatialCacheService, fogLocationIntegrationService } from './src/services';
+import { getDatabaseService } from './src/database/services';
+import { EXPLORATION_RENDER_SOURCE, EXPLORATION_TILE_ZOOM } from './src/config';
+import { tilesForCircle } from './src/utils/tiles';
 
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -44,6 +46,33 @@ export default function App() {
         // Initialize the spatial cache with data from the database
         await spatialCacheService.initialize();
 
+        // Backfill tile-based exploration coverage from existing explored areas (one-time best effort).
+        // This enables tile-based rendering/sync even if the app previously stored only explored_areas.
+        try {
+          const dbService = getDatabaseService();
+          const existingTiles = await dbService.getAllVisitedTiles().catch(() => []);
+
+          if (existingTiles.length === 0) {
+            const exploredAreas = await dbService.getAllExploredAreas();
+
+            if (exploredAreas.length > 0) {
+              const tiles = exploredAreas.flatMap(area =>
+                tilesForCircle(area.latitude, area.longitude, area.radius, EXPLORATION_TILE_ZOOM)
+                  .map(tile => ({ ...tile, explored_at: area.explored_at }))
+              );
+
+              // If rendering depends on tiles, block until backfill completes.
+              if (EXPLORATION_RENDER_SOURCE === 'tiles') {
+                await dbService.upsertVisitedTiles(tiles);
+              } else {
+                dbService.upsertVisitedTiles(tiles).catch(() => {});
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('Visited-tiles backfill skipped/failed:', error);
+        }
+
         // Configure background location service
         backgroundLocationService.configure({
           autoProcessOnForeground: true,
@@ -67,20 +96,9 @@ export default function App() {
 
         console.log('Performance monitoring services initialized');
 
-        // Initialize and start exploration state synchronization
-        explorationStateSynchronizer.configure({
-          autoSync: true,
-          syncInterval: 5000, // 5 seconds for development
-          batchSize: 50,
-          enableConflictResolution: true,
-          debugMode: true
-        });
-
-        // Perform initial sync to load explored areas from database
-        await explorationStateSynchronizer.performFullSync();
-        explorationStateSynchronizer.startAutoSync();
-
-        console.log('Exploration state synchronizer initialized');
+        // Start fog-location integration (location -> exploration -> fog)
+        await fogLocationIntegrationService.start();
+        console.log('Fog-location integration started');
 
         // Start periodic database compaction
         compactionInterval = setInterval(() => {

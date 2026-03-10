@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import {
   View,
   StyleSheet,
@@ -16,7 +16,6 @@ import {
   resetViewport,
 } from '../store/slices/mapSlice';
 import { selectMapStatus, selectMapAndLocation } from '../store/selectors';
-import { fogLocationIntegrationService } from '../services';
 
 interface MapScreenProps {
   // Props can be expanded for additional functionality
@@ -114,8 +113,6 @@ const MapScreen: React.FC<MapScreenProps> = () => {
     dispatch(resetViewport());
   };
 
-  console.log('🗺️ MapScreen render - isMapReady:', isMapReady, 'hasError:', mapStatus.hasError);
-
   // Show error state if map failed to load
   if (mapStatus.hasError) {
     return (
@@ -135,7 +132,6 @@ const MapScreen: React.FC<MapScreenProps> = () => {
     <View style={styles.container}>
       <View style={styles.mapWrapper}>
         <MapContainer
-          onLocationUpdate={handleLocationUpdate}
           initialCenter={MAPBOX_CONFIG.DEFAULT_CENTER}
           initialZoom={MAPBOX_CONFIG.DEFAULT_ZOOM}
         />

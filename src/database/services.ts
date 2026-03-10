@@ -30,6 +30,14 @@ export interface Achievement {
   progress: number;
 }
 
+export interface VisitedTile {
+  z: number;
+  x: number;
+  y: number;
+  explored_at: string;
+  created_at?: string;
+}
+
 export interface SpatialQuery {
   latitude: number;
   longitude: number;
@@ -199,6 +207,78 @@ export class DatabaseService {
     } catch (error) {
       console.error('Failed to delete explored area:', error);
       throw new Error(`Failed to delete explored area: ${error}`);
+    }
+  }
+
+  // Visited Tiles Operations (tile-based exploration model)
+  async upsertVisitedTiles(tiles: Omit<VisitedTile, 'created_at'>[]): Promise<void> {
+    if (tiles.length === 0) {
+      return;
+    }
+
+    try {
+      await this.db.withTransactionAsync(async () => {
+        for (const tile of tiles) {
+          await this.db.runAsync(
+            `INSERT INTO visited_tiles (z, x, y, explored_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(z, x, y) DO UPDATE SET explored_at =
+               CASE
+                 WHEN excluded.explored_at < visited_tiles.explored_at THEN excluded.explored_at
+                 ELSE visited_tiles.explored_at
+               END`,
+            [tile.z, tile.x, tile.y, tile.explored_at]
+          );
+        }
+      });
+    } catch (error) {
+      console.error('Failed to upsert visited tiles:', error);
+      throw new Error(`Failed to upsert visited tiles: ${error}`);
+    }
+  }
+
+  async getVisitedTilesInBounds(params: {
+    z: number;
+    xMin: number;
+    xMax: number;
+    yMin: number;
+    yMax: number;
+  }): Promise<VisitedTile[]> {
+    try {
+      const { z, xMin, xMax, yMin, yMax } = params;
+      const result = await this.db.getAllAsync<VisitedTile>(
+        `SELECT * FROM visited_tiles
+         WHERE z = ?
+         AND x BETWEEN ? AND ?
+         AND y BETWEEN ? AND ?
+         ORDER BY explored_at DESC`,
+        [z, xMin, xMax, yMin, yMax]
+      );
+      return result;
+    } catch (error) {
+      console.error('Failed to get visited tiles in bounds:', error);
+      throw new Error(`Failed to get visited tiles in bounds: ${error}`);
+    }
+  }
+
+  async getAllVisitedTiles(): Promise<VisitedTile[]> {
+    try {
+      const result = await this.db.getAllAsync<VisitedTile>(
+        'SELECT * FROM visited_tiles ORDER BY explored_at DESC'
+      );
+      return result;
+    } catch (error) {
+      console.error('Failed to get all visited tiles:', error);
+      throw new Error(`Failed to get all visited tiles: ${error}`);
+    }
+  }
+
+  async clearVisitedTiles(): Promise<void> {
+    try {
+      await this.db.execAsync('DELETE FROM visited_tiles');
+    } catch (error) {
+      console.error('Failed to clear visited tiles:', error);
+      throw new Error(`Failed to clear visited tiles: ${error}`);
     }
   }
 
@@ -604,6 +684,7 @@ export class DatabaseService {
   private async exportSalvageableData(): Promise<any> {
     const salvageableData: any = {
       exploredAreas: [],
+      visitedTiles: [],
       userStats: null,
       achievements: []
     };
@@ -633,6 +714,15 @@ export class DatabaseService {
       );
     } catch (error) {
       console.warn('Could not salvage achievements:', error);
+    }
+
+    // Try to salvage visited tiles (optional if schema is older)
+    try {
+      salvageableData.visitedTiles = await this.db.getAllAsync<VisitedTile>(
+        'SELECT * FROM visited_tiles WHERE z IS NOT NULL AND x IS NOT NULL AND y IS NOT NULL'
+      );
+    } catch (error) {
+      // Older DBs won't have this table; ignore.
     }
 
     return salvageableData;
@@ -672,6 +762,15 @@ export class DatabaseService {
             }
           }
         }
+
+        // Import visited tiles if present
+        if (data.visitedTiles && data.visitedTiles.length > 0) {
+          try {
+            await this.upsertVisitedTiles(data.visitedTiles);
+          } catch (error) {
+            console.warn('Could not import visited tiles:', error);
+          }
+        }
       });
     } catch (error) {
       console.error('Failed to import salvaged data:', error);
@@ -682,17 +781,19 @@ export class DatabaseService {
   // Backup and Recovery Operations
   async exportData(): Promise<{
     exploredAreas: ExploredArea[];
+    visitedTiles: VisitedTile[];
     userStats: UserStats | null;
     achievements: Achievement[];
   }> {
     try {
-      const [exploredAreas, userStats, achievements] = await Promise.all([
+      const [exploredAreas, visitedTiles, userStats, achievements] = await Promise.all([
         this.getAllExploredAreas(),
+        this.getAllVisitedTiles().catch(() => []),
         this.getUserStats(),
         this.getAllAchievements()
       ]);
 
-      return { exploredAreas, userStats, achievements };
+      return { exploredAreas, visitedTiles, userStats, achievements };
     } catch (error) {
       console.error('Failed to export data:', error);
       throw new Error(`Failed to export data: ${error}`);
@@ -701,6 +802,7 @@ export class DatabaseService {
 
   async importData(data: {
     exploredAreas: ExploredArea[];
+    visitedTiles?: VisitedTile[];
     userStats: UserStats | null;
     achievements: Achievement[];
   }): Promise<void> {
@@ -709,6 +811,11 @@ export class DatabaseService {
         // Clear existing data
         await this.db.execAsync('DELETE FROM explored_areas');
         await this.db.execAsync('DELETE FROM achievements');
+        try {
+          await this.db.execAsync('DELETE FROM visited_tiles');
+        } catch (error) {
+          // Table may not exist on older schemas
+        }
 
         // Import explored areas
         for (const area of data.exploredAreas) {
@@ -724,6 +831,11 @@ export class DatabaseService {
         // Import achievements
         for (const achievement of data.achievements) {
           await this.createAchievement(achievement);
+        }
+
+        // Import visited tiles (optional)
+        if (data.visitedTiles && data.visitedTiles.length > 0) {
+          await this.upsertVisitedTiles(data.visitedTiles);
         }
       });
     } catch (error) {
