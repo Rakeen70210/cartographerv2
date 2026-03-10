@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, Text } from 'react-native';
 import { Provider } from 'react-redux';
 import { useEffect, useState } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from './src/store/store';
 import { TabNavigation, ErrorBoundary } from './src/components';
 import { validateAppConfiguration } from './src/config';
@@ -148,12 +149,14 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <Provider store={store}>
-        <View style={styles.container}>
-          <TabNavigation />
-          <StatusBar style="auto" />
-        </View>
-      </Provider>
+      <SafeAreaProvider>
+        <Provider store={store}>
+          <View style={styles.container}>
+            <TabNavigation />
+            <StatusBar style="auto" />
+          </View>
+        </Provider>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

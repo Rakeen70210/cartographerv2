@@ -4,6 +4,8 @@
  */
 
 export const CloudVertexShaderSource = `
+  precision mediump float;
+
   // Vertex attributes
   attribute vec3 a_position;      // World position (x, y, elevation)
   attribute vec2 a_texCoord;      // Texture coordinates
@@ -146,7 +148,7 @@ export class CloudVertexShader {
    */
   static getUniformLocations(gl: WebGLRenderingContext, program: WebGLProgram): Record<string, WebGLUniformLocation> {
     const uniforms: Record<string, WebGLUniformLocation> = {};
-    
+
     const uniformNames = [
       'u_viewMatrix',
       'u_projectionMatrix',

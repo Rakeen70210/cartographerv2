@@ -287,7 +287,17 @@ export class SkiaShaderManager {
       'u_zoom',
       'u_wind_offset',
       'u_cloud_density',
-      'u_animation_speed'
+      'u_animation_speed',
+      'u_fog_opacity',
+      'u_base_haze',
+      'u_edge_softness',
+      'u_haze_scale',
+      'u_mass_scale',
+      'u_detail_scale',
+      'u_cloud_primary_color',
+      'u_cloud_secondary_color',
+      'u_cloud_highlight_color',
+      'u_cloud_ambient_color'
     ];
 
     // Note: Skia RuntimeEffect doesn't expose uniform introspection in the same way as WebGL
@@ -531,6 +541,16 @@ export class SkiaShaderManager {
       u_wind_offset: this.currentUniforms.u_wind_offset,
       u_cloud_density: this.currentUniforms.u_cloud_density,
       u_animation_speed: this.currentUniforms.u_animation_speed,
+      u_fog_opacity: this.currentUniforms.u_fog_opacity,
+      u_base_haze: this.currentUniforms.u_base_haze,
+      u_edge_softness: this.currentUniforms.u_edge_softness,
+      u_haze_scale: this.currentUniforms.u_haze_scale,
+      u_mass_scale: this.currentUniforms.u_mass_scale,
+      u_detail_scale: this.currentUniforms.u_detail_scale,
+      u_cloud_primary_color: this.currentUniforms.u_cloud_primary_color,
+      u_cloud_secondary_color: this.currentUniforms.u_cloud_secondary_color,
+      u_cloud_highlight_color: this.currentUniforms.u_cloud_highlight_color,
+      u_cloud_ambient_color: this.currentUniforms.u_cloud_ambient_color,
     };
   }
 

@@ -12,6 +12,8 @@ import { fogDissipationService } from '../services/fogDissipationService';
 import { useSkiaPerformanceMonitoring } from '../hooks/useSkiaPerformanceMonitoring';
 import { SkiaPerformanceMetrics, SkiaQualitySettings } from '../services/cloudSystem/performance/SkiaPerformanceMonitor';
 import { WindSystem, createWindSystem } from '../services/cloudSystem/wind';
+import { useCloudFogVisualParams } from '../hooks/useCloudFogVisualParams';
+import { buildSkiaFogUniforms } from '../services/cloudSystem/settings/CloudFogVisualAdapter';
 
 // Utility function to normalize explored areas from different sources
 let normalizedAreaIdCounter = 0;
@@ -189,15 +191,17 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
     currentQuality.animationSpeed : baseAnimationSpeed;
   const cloudDensity = enablePerformanceMonitoring ?
     currentQuality.cloudDensity : baseCloudDensity;
+  const visualParams = useCloudFogVisualParams(fogOpacity);
 
-  const shaderUniforms = useMemo<SkiaCloudUniforms>(() => ({
-    u_time: (clock.value ?? 0) * 0.001,
-    u_resolution: [viewport.width, viewport.height],
-    u_zoom: zoomLevel,
-    u_wind_offset: windOffset,
-    u_cloud_density: cloudDensity,
-    u_animation_speed: animationSpeed
-  }), [clock.value, viewport.width, viewport.height, zoomLevel, windOffset, cloudDensity, animationSpeed]);
+  const shaderUniforms = useMemo<SkiaCloudUniforms>(() => buildSkiaFogUniforms({
+    time: (clock.value ?? 0) * 0.001,
+    resolution: [viewport.width, viewport.height],
+    zoom: zoomLevel,
+    windOffset,
+    cloudDensity,
+    animationSpeed,
+    visualParams,
+  }), [clock.value, viewport.width, viewport.height, zoomLevel, windOffset, cloudDensity, animationSpeed, visualParams]);
 
   // Masking system state with performance-aware configuration
   const [maskingSystem] = useState(() => new FogMaskingSystem({
@@ -224,7 +228,8 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
       enableLayeredBlur: currentQuality.enableLayeredEffects,
       blurConfig: {
         ...DEFAULT_FOG_MASKING_CONFIG.blurConfig,
-        blurRadius: currentQuality.blurRadius,
+        blurRadius: Math.max(currentQuality.blurRadius, 14),
+        featherIntensity: 0.9,
       },
     });
   }, [currentQuality, enablePerformanceMonitoring, maskingSystem]);
@@ -416,9 +421,6 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
       return null;
     }
   }, [normalizedExploredAreas, dissipationAnimations, viewport, zoomLevel, shaderInitialized, maskingSystem]);
-
-
-
   // Get active shader, texture, and uniforms for rendering
   const activeShader = shaderInitialized ? shaderSystem.getActiveShader() : null;
   const uniformsForSkia = shaderInitialized ? shaderSystem.getUniformsForSkia() : {};
@@ -441,7 +443,7 @@ export const SkiaFogOverlay: React.FC<SkiaFogOverlayProps> = ({
         ) : (
           // Ultimate fallback to basic fog fill when nothing else works
           <Fill
-            color={`rgba(139, 157, 195, ${Math.min(fogOpacity * cloudDensity, 0.8)})`}
+            color={`rgba(245, 248, 255, ${Math.min(fogOpacity * cloudDensity, 0.92)})`}
           />
         )}
 

@@ -5,8 +5,14 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CloudSettings } from '../../../types/cloud';
+import {
+  EXPLORATION_SOFT_CLOUDS_PRESET_ID,
+  getSoftCloudVisualSettingsBaseline,
+  SOFT_CLOUD_VISUAL_ROLLOUT_VERSION,
+} from './CloudFogVisualAdapter';
 
 const VISUAL_SETTINGS_KEY = 'cloud_visual_settings';
+const VISUAL_SETTINGS_MIGRATION_VERSION_KEY = 'cloud_visual_settings_migration_version';
 
 export interface CloudColorScheme {
   id: string;
@@ -76,15 +82,7 @@ export class VisualCustomizationManager {
    * Get default visual settings
    */
   getDefaultSettings(): VisualCustomizationSettings {
-    return {
-      selectedColorScheme: 'day',
-      selectedStylePreset: 'realistic',
-      opacity: 0.8,
-      contrast: 1.0,
-      brightness: 1.0,
-      saturation: 1.0,
-      enableCustomColors: false,
-    };
+    return getSoftCloudVisualSettingsBaseline();
   }
 
   /**
@@ -282,7 +280,7 @@ export class VisualCustomizationManager {
     
     // If this was the selected preset, switch to default
     if (this.currentSettings.selectedStylePreset === presetId) {
-      this.currentSettings.selectedStylePreset = 'realistic';
+      this.currentSettings.selectedStylePreset = EXPLORATION_SOFT_CLOUDS_PRESET_ID;
       await this.saveSettings();
     }
     
@@ -438,6 +436,18 @@ export class VisualCustomizationManager {
   private initializeBuiltInPresets(): void {
     const presets: CloudStylePreset[] = [
       {
+        id: 'exploration_soft_clouds',
+        name: 'Exploration Soft Clouds',
+        description: 'Bright, soft cloud cover tuned for fog-of-war exploration',
+        colorScheme: 'day',
+        settings: {
+          density: 0.72,
+          animationSpeed: 0.5,
+          opacity: 0.76,
+          contrast: 0.8,
+        },
+      },
+      {
         id: 'realistic',
         name: 'Realistic',
         description: 'Natural, photorealistic cloud appearance',
@@ -510,12 +520,23 @@ export class VisualCustomizationManager {
   private async loadSettings(): Promise<void> {
     try {
       const settingsData = await AsyncStorage.getItem(VISUAL_SETTINGS_KEY);
+      const migrationVersionRaw = await AsyncStorage.getItem(VISUAL_SETTINGS_MIGRATION_VERSION_KEY);
+      const migrationVersion = Number.parseInt(migrationVersionRaw ?? '0', 10);
       
-      if (settingsData) {
+      if (migrationVersion < SOFT_CLOUD_VISUAL_ROLLOUT_VERSION) {
+        this.currentSettings = this.buildSoftCloudRolloutSettings();
+        await this.saveSettings();
+        await AsyncStorage.setItem(
+          VISUAL_SETTINGS_MIGRATION_VERSION_KEY,
+          String(SOFT_CLOUD_VISUAL_ROLLOUT_VERSION),
+        );
+      } else if (settingsData) {
         const savedSettings = JSON.parse(settingsData);
         if (this.validateSettings(savedSettings)) {
           this.currentSettings = { ...this.getDefaultSettings(), ...savedSettings };
         }
+      } else {
+        this.currentSettings = this.getDefaultSettings();
       }
       
       // Load custom presets
@@ -531,6 +552,10 @@ export class VisualCustomizationManager {
   private async saveSettings(): Promise<void> {
     try {
       await AsyncStorage.setItem(VISUAL_SETTINGS_KEY, JSON.stringify(this.currentSettings));
+      await AsyncStorage.setItem(
+        VISUAL_SETTINGS_MIGRATION_VERSION_KEY,
+        String(SOFT_CLOUD_VISUAL_ROLLOUT_VERSION),
+      );
     } catch (error) {
       console.error('Failed to save visual settings:', error);
     }
@@ -610,6 +635,18 @@ export class VisualCustomizationManager {
       default:
         return true;
     }
+  }
+
+  /**
+   * Build the rollout baseline for the forced soft-cloud migration.
+   */
+  private buildSoftCloudRolloutSettings(): VisualCustomizationSettings {
+    return {
+      ...getSoftCloudVisualSettingsBaseline(),
+      selectedColorScheme: this.stylePresets.get(EXPLORATION_SOFT_CLOUDS_PRESET_ID)?.colorScheme ?? 'day',
+      enableCustomColors: false,
+      customColors: undefined,
+    };
   }
 
   /**

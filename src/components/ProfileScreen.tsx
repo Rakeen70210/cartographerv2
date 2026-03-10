@@ -10,10 +10,14 @@ import {
 } from 'react-native';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchProfileStats, refreshStats } from '../store/slices/profileSlice';
+import { setMapStyle } from '../store/slices/mapSlice';
+import { saveMapStyle } from '../store/persistence';
+import { MAP_STYLE_OPTIONS } from '../config/mapbox';
+import { MapStyleOption } from '../types/map';
 import { cloudFogIntegration, fogSystemCompatibility } from '../services/cloudSystem/integration';
 import { BackupManager } from './BackupManager';
 import { OfflineManager } from './OfflineManager';
-import CloudSettingsPanel from './CloudSettingsPanel';
+import { CloudSettingsPanel } from './CloudSettingsPanel';
 
 const { width } = Dimensions.get('window');
 
@@ -116,6 +120,15 @@ const ProfileScreen: React.FC = () => {
     performanceScore: 0
   });
 
+  const { mapStyleId } = useAppSelector(state => state.map);
+
+  const handleMapStyleChange = (styleOption: MapStyleOption) => {
+    dispatch(setMapStyle({ id: styleOption.id, styleURL: styleOption.styleURL }));
+    saveMapStyle({ id: styleOption.id, styleURL: styleOption.styleURL }).catch(error => {
+      console.error('Failed to persist map style:', error);
+    });
+  };
+
   useEffect(() => {
     // Fetch profile data on component mount
     dispatch(fetchProfileStats());
@@ -203,6 +216,33 @@ const ProfileScreen: React.FC = () => {
           >
             <Text style={styles.headerButtonText}>Backup</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Map Theme */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Map Theme</Text>
+        <View style={styles.themeContainer}>
+          {MAP_STYLE_OPTIONS.map(styleOption => (
+            <TouchableOpacity
+              key={styleOption.id}
+              style={[
+                styles.themeButton,
+                mapStyleId === styleOption.id && styles.themeButtonActive,
+              ]}
+              onPress={() => handleMapStyleChange(styleOption)}
+              accessibilityLabel={`Set map style to ${styleOption.label}`}
+            >
+              <Text
+                style={[
+                  styles.themeButtonText,
+                  mapStyleId === styleOption.id && styles.themeButtonTextActive,
+                ]}
+              >
+                {styleOption.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 
@@ -630,6 +670,31 @@ const styles = StyleSheet.create({
   cloudErrorText: {
     fontSize: 14,
     color: '#FF3B30',
+  },
+  themeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  themeButton: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 2,
+    borderColor: '#E5E5EA',
+  },
+  themeButtonActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  themeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  themeButtonTextActive: {
+    color: '#FFFFFF',
   },
 });
 
