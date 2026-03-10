@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
+import { fogLocationIntegrationService } from '../services';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { loadMapStyle } from '../store/persistence';
 import {

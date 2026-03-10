@@ -325,7 +325,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
   initialZoom = MAPBOX_CONFIG.DEFAULT_ZOOM,
 }) => {
   const dispatch = useAppDispatch();
-  const { viewport, followUserLocation, mapStyleURL } = useAppSelector(state => state.map);
+  const { viewport, followUserLocation, mapStyleURL, mapStyleId } = useAppSelector(state => state.map);
   const { exploredAreas } = useAppSelector(state => state.exploration);
   const fogVisible = useAppSelector(state => state.fog.isVisible);
   const fogOpacity = useAppSelector(state => state.fog.opacity);
@@ -449,14 +449,23 @@ const MapContainer: React.FC<MapContainerProps> = ({
       },
       paint: {
         'fill-antialias': false,
-        'fill-color': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          0, '#f2f5fb',
-          6, '#edf2f8',
-          12, '#e7eef6',
-        ],
+        'fill-color': mapStyleId === 'light'
+          ? [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0, '#b8c4d4',
+              6, '#b0bccb',
+              12, '#a8b8ca',
+            ]
+          : [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0, '#f2f5fb',
+              6, '#edf2f8',
+              12, '#e7eef6',
+            ],
         'fill-opacity': 0,
       },
     });

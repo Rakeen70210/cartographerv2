@@ -4,6 +4,7 @@ import type {
   CloudStylePreset,
   VisualCustomizationSettings,
 } from './VisualCustomizationManager';
+import type { MapStyleId } from '../../../types/map';
 
 export const EXPLORATION_SOFT_CLOUDS_PRESET_ID = 'exploration_soft_clouds';
 export const SOFT_CLOUD_VISUAL_ROLLOUT_VERSION = 1;
@@ -55,6 +56,25 @@ const DEFAULT_COLOR_SCHEME: CloudColorScheme = {
   },
   opacity: 0.8,
   contrast: 1.0,
+};
+
+/**
+ * Fog color scheme override for the light map theme.
+ * Uses distinctly darker/cooler tones so the fog is visible against the
+ * near-white Mapbox light basemap.
+ */
+const LIGHT_THEME_COLOR_SCHEME: CloudColorScheme = {
+  id: 'light_theme_override',
+  name: 'Light Theme',
+  description: 'Darker fog for contrast against light basemap',
+  colors: {
+    primary: '#B8C4D4',
+    secondary: '#9AAABA',
+    highlight: '#D0DAE6',
+    ambient: '#A8B8CA',
+  },
+  opacity: 0.85,
+  contrast: 1.05,
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
@@ -116,13 +136,18 @@ export const deriveCloudFogVisualParams = ({
   currentScheme,
   currentPreset,
   baseFogOpacity,
+  mapStyleId,
 }: {
   visualSettings: VisualCustomizationSettings;
   currentScheme: CloudColorScheme | null;
   currentPreset: CloudStylePreset | null;
   baseFogOpacity: number;
+  mapStyleId?: MapStyleId;
 }): CloudFogVisualParams => {
-  const scheme = currentScheme ?? DEFAULT_COLOR_SCHEME;
+  // When on the light map theme, override with a darker palette for contrast.
+  const scheme = mapStyleId === 'light'
+    ? LIGHT_THEME_COLOR_SCHEME
+    : (currentScheme ?? DEFAULT_COLOR_SCHEME);
   const profile = getPresetProfile(currentPreset?.id ?? visualSettings.selectedStylePreset);
   const presetOpacity = currentPreset?.settings.opacity ?? 1;
   const presetContrast = currentPreset?.settings.contrast ?? 1;

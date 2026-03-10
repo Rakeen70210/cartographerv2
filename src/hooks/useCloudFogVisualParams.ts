@@ -10,6 +10,7 @@ import {
   VisualCustomizationManager,
   VisualCustomizationSettings,
 } from '../services/cloudSystem/settings/VisualCustomizationManager';
+import { useAppSelector } from '../store/hooks';
 
 let visualCustomizationManagerInstance: VisualCustomizationManager | null = null;
 
@@ -22,6 +23,7 @@ const getVisualCustomizationManager = (): VisualCustomizationManager => {
 
 export const useCloudFogVisualParams = (baseFogOpacity: number): CloudFogVisualParams => {
   const manager = getVisualCustomizationManager();
+  const mapStyleId = useAppSelector(state => state.map.mapStyleId);
   const [visualSettings, setVisualSettings] = useState<VisualCustomizationSettings>(() => getSoftCloudVisualSettingsBaseline());
   const [currentScheme, setCurrentScheme] = useState<CloudColorScheme | null>(() => manager.getCurrentColorScheme());
   const [currentPreset, setCurrentPreset] = useState<CloudStylePreset | null>(() => manager.getCurrentStylePreset());
@@ -56,5 +58,6 @@ export const useCloudFogVisualParams = (baseFogOpacity: number): CloudFogVisualP
     currentScheme,
     currentPreset,
     baseFogOpacity,
-  }), [baseFogOpacity, currentPreset, currentScheme, visualSettings]);
+    mapStyleId,
+  }), [baseFogOpacity, currentPreset, currentScheme, mapStyleId, visualSettings]);
 };
