@@ -8,6 +8,10 @@ export const selectMapReady = (state: RootState) => state.map.isMapReady;
 export const selectMapError = (state: RootState) => state.map.error;
 export const selectUserLocation = (state: RootState) => state.map.userLocation;
 export const selectFollowUserLocation = (state: RootState) => state.map.followUserLocation;
+export const selectMapStyle = (state: RootState) => ({
+  id: state.map.mapStyleId,
+  styleURL: state.map.mapStyleURL,
+});
 
 // Location selectors
 export const selectLocationState = (state: RootState) => state.location;
@@ -36,6 +40,8 @@ export const selectMapAndLocation = createSelector(
     viewport: mapState.viewport,
     isMapReady: mapState.isMapReady,
     userLocation: mapState.userLocation,
+    mapStyleId: mapState.mapStyleId,
+    mapStyleURL: mapState.mapStyleURL,
     isTracking: locationState.isTracking,
     hasPermission: locationState.hasPermission,
     currentLocation: locationState.currentLocation,

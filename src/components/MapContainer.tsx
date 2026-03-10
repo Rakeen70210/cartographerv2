@@ -34,7 +34,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
   initialZoom = MAPBOX_CONFIG.DEFAULT_ZOOM
 }) => {
   const dispatch = useAppDispatch();
-  const { viewport, isMapReady, userLocation, followUserLocation } = useAppSelector(state => state.map);
+  const { viewport, isMapReady, userLocation, mapStyleURL } = useAppSelector(state => state.map);
   const { isVisible: fogVisible } = useAppSelector(state => state.fog);
   const { exploredAreas } = useAppSelector(state => state.exploration);
 
@@ -319,7 +319,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
         onDidFinishLoadingMap={handleMapReady}
         onMapIdle={handleMapIdle}
         onMapLoadingError={handleMapError}
-        styleURL={Mapbox.StyleURL.Street}
+        styleURL={mapStyleURL}
       // ... other props
       >
         <Mapbox.Camera
@@ -336,6 +336,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
           onUpdate={handleUserLocationUpdate}
         />
       </Mapbox.MapView>
+      {(() => { console.log('🌫️ MapContainer fog render check:', { isMapReady, fogVisible, exploredAreasCount: exploredAreas?.length }); return null; })()}
       {isMapReady && fogVisible && (() => {
         // Include user's current location as an explored area for immediate fog clearing
         const areasWithUserLocation = userLocation ? [

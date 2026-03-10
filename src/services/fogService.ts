@@ -1,12 +1,19 @@
 import { ExploredArea } from '../database/services';
-import { FogGeometry, FogFeature, GeographicArea, SpatialGrid, GridCell, BoundingBox } from '../types/fog';
+import { FogGeometry, FogFeature, GeographicArea, SpatialGrid, GridCell, BoundingBox, GenericExploredArea } from '../types/fog';
 import { getPerformanceMonitorService, LevelOfDetailSettings } from './performanceMonitorService';
 import { getMemoryManagementService } from './memoryManagementService';
+import { debugLog } from '../utils/logger';
+import * as turf from '@turf/turf';
+import { Feature, MultiPolygon, Polygon } from 'geojson';
+
+type FogInputArea = ExploredArea | GenericExploredArea;
 
 export class FogService {
   private spatialGrid: SpatialGrid;
   private readonly CELL_SIZE = 0.01; // ~1km at equator
   private readonly DEFAULT_EXPLORATION_RADIUS = 100; // meters
+  private readonly MAX_BOOLEAN_OPERATION_AREAS = 250;
+  private readonly MAX_BOOLEAN_OPERATION_TIME_MS = 80;
   private performanceMonitorService = getPerformanceMonitorService();
   private memoryManagementService = getMemoryManagementService();
   private fogGeometryCache: Map<string, { geometry: FogGeometry; timestamp: number; zoomLevel: number }> = new Map();
@@ -22,36 +29,54 @@ export class FogService {
   /**
    * Generate fog geometry based on explored areas with performance optimizations
    */
-  generateFogGeometry(exploredAreas: ExploredArea[], zoomLevel: number = 10, bounds?: BoundingBox): FogGeometry {
+  generateFogGeometry(exploredAreas: FogInputArea[], zoomLevel: number = 10, bounds?: BoundingBox): FogGeometry {
     const startTime = performance.now();
-    
-    console.log('🌫️ FogService.generateFogGeometry called:', {
-      exploredAreasCount: exploredAreas.length,
+    const normalizedAreas = this.normalizeExploredAreas(exploredAreas);
+
+    debugLog('FogService', 'generateFogGeometry called', {
+      exploredAreasCount: normalizedAreas.length,
       zoomLevel,
       hasBounds: !!bounds
     });
-    
+
     // Check cache first
-    const cacheKey = this.generateCacheKey(exploredAreas, zoomLevel, bounds);
+    const cacheKey = this.generateCacheKey(normalizedAreas, zoomLevel, bounds);
     const cached = this.fogGeometryCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
       this.performanceMonitorService.recordFrame();
-      console.log('🌫️ Returning cached fog geometry with', cached.geometry.features.length, 'features');
+      debugLog('FogService', `Returning cached fog geometry with ${cached.geometry.features.length} features`);
       return cached.geometry;
     }
 
     // Get level of detail settings for current zoom
     const lodSettings = this.performanceMonitorService.getLODSettings(zoomLevel);
-    
-    // Update spatial grid with explored areas using LOD
-    this.updateSpatialGridWithLOD(exploredAreas, lodSettings, bounds);
 
-    // Generate fog features based on unexplored grid cells
-    let fogFeatures = this.generateFogFeaturesWithLOD(lodSettings, bounds);
+    let fogFeatures: FogFeature[] = [];
+    if (zoomLevel <= 3.5) {
+      // At globe-level zoom, render continuous fog to avoid visible tile checkerboarding.
+      fogFeatures = this.generateDefaultFogCoverage(bounds);
+    } else if (normalizedAreas.length === 0) {
+      // Render a continuous fog field when nothing has been explored yet.
+      fogFeatures = this.generateDefaultFogCoverage(bounds);
+    } else if (bounds) {
+      const mergedFogFeatures = this.generateMergedFogFeatures(normalizedAreas, zoomLevel, bounds);
+      if (mergedFogFeatures) {
+        fogFeatures = mergedFogFeatures;
+      } else {
+        // Fall back to the legacy cell-based approach when polygon boolean ops are too expensive.
+        this.updateSpatialGridWithLOD(normalizedAreas, lodSettings, bounds);
+        fogFeatures = this.generateFogFeaturesWithLOD(lodSettings, bounds);
+      }
+    } else {
+      // Update spatial grid with explored areas using LOD
+      this.updateSpatialGridWithLOD(normalizedAreas, lodSettings, bounds);
+      // Generate fog features based on unexplored grid cells
+      fogFeatures = this.generateFogFeaturesWithLOD(lodSettings, bounds);
+    }
 
     // If no fog features were generated (e.g., no unexplored areas), create a default fog area
     if (fogFeatures.length === 0) {
-      console.log('🌫️ No fog features generated, creating default fog coverage');
+      debugLog('FogService', 'No fog features generated, creating default fog coverage');
       fogFeatures = this.generateDefaultFogCoverage(bounds);
     }
 
@@ -73,8 +98,8 @@ export class FogService {
     // Record performance metrics
     const endTime = performance.now();
     this.performanceMonitorService.recordFrame();
-    
-    console.log(`🌫️ Fog geometry generated in ${(endTime - startTime).toFixed(2)}ms for zoom ${zoomLevel} with ${fogFeatures.length} features`);
+
+    debugLog('FogService', `Fog geometry generated in ${(endTime - startTime).toFixed(2)}ms for zoom ${zoomLevel} with ${fogFeatures.length} features`);
 
     return geometry;
   }
@@ -85,20 +110,16 @@ export class FogService {
   private updateSpatialGridWithLOD(exploredAreas: ExploredArea[], lodSettings: LevelOfDetailSettings, bounds?: BoundingBox): void {
     // Use adaptive cell size based on zoom level
     const adaptiveCellSize = lodSettings.fogCellSize;
-    
-    // Clear existing explored status only for cells in bounds
+
+    // First, populate the grid with ALL cells in the bounds as unexplored
+    // This is crucial - we need unexplored cells to generate fog!
     if (bounds) {
-      this.clearCellsInBounds(bounds);
-    } else {
-      this.spatialGrid.cells.forEach(cell => {
-        cell.explored = false;
-        cell.fogOpacity = 1.0;
-      });
+      this.populateCellsInBounds(bounds, adaptiveCellSize);
     }
 
     // Mark cells as explored based on areas, but only process areas in bounds
-    const relevantAreas = bounds ? 
-      exploredAreas.filter(area => this.isAreaInBounds(area, bounds)) : 
+    const relevantAreas = bounds ?
+      exploredAreas.filter(area => this.isAreaInBounds(area, bounds)) :
       exploredAreas;
 
     relevantAreas.forEach(area => {
@@ -115,12 +136,52 @@ export class FogService {
           cell = this.createGridCellWithSize(cellId, adaptiveCellSize);
           this.spatialGrid.cells.set(cellId, cell);
         }
-        
+
         cell.explored = true;
         cell.exploredAt = new Date(area.explored_at);
         cell.fogOpacity = 0.0;
       });
     });
+  }
+
+  /**
+   * Populate the grid with unexplored cells for the given bounds
+   */
+  private populateCellsInBounds(bounds: BoundingBox, cellSize: number): void {
+    // Limit the number of cells to prevent memory issues
+    const MAX_CELLS = 2000;
+    const latRange = bounds.north - bounds.south;
+    const lngRange = bounds.east - bounds.west;
+    const estimatedCells = (latRange / cellSize) * (lngRange / cellSize);
+
+    // If too many cells, increase cell size
+    let effectiveCellSize = cellSize;
+    if (estimatedCells > MAX_CELLS) {
+      const scaleFactor = Math.sqrt(estimatedCells / MAX_CELLS);
+      effectiveCellSize = cellSize * scaleFactor;
+      debugLog('FogService', `Adjusted cell size to ${effectiveCellSize.toFixed(4)} to limit cells to ~${MAX_CELLS}`);
+    }
+
+    // Clear existing cells in bounds first
+    this.clearCellsInBounds(bounds);
+
+    // Populate with unexplored cells
+    let cellCount = 0;
+    for (let lat = bounds.south; lat < bounds.north && cellCount < MAX_CELLS; lat += effectiveCellSize) {
+      for (let lng = bounds.west; lng < bounds.east && cellCount < MAX_CELLS; lng += effectiveCellSize) {
+        // Use getCellIdWithSize to ensure cellId matches the effectiveCellSize
+        const cellId = this.getCellIdWithSize(lat, lng, effectiveCellSize);
+        if (!this.spatialGrid.cells.has(cellId)) {
+          const cell = this.createGridCellWithSize(cellId, effectiveCellSize);
+          cell.explored = false;
+          cell.fogOpacity = 1.0;
+          this.spatialGrid.cells.set(cellId, cell);
+          cellCount++;
+        }
+      }
+    }
+
+    debugLog('FogService', `Populated ${cellCount} unexplored cells in bounds`);
   }
 
   /**
@@ -135,7 +196,7 @@ export class FogService {
       particleQuality: 'medium',
       enableAnimations: true
     };
-    
+
     this.updateSpatialGridWithLOD(exploredAreas, defaultLOD);
   }
 
@@ -152,13 +213,13 @@ export class FogService {
     const maxLng = lng + radiusDegrees;
 
     // Iterate through grid cells in the bounding box
-    for (let cellLat = Math.floor(minLat / this.CELL_SIZE) * this.CELL_SIZE; 
-         cellLat <= maxLat; 
-         cellLat += this.CELL_SIZE) {
-      for (let cellLng = Math.floor(minLng / this.CELL_SIZE) * this.CELL_SIZE; 
-           cellLng <= maxLng; 
-           cellLng += this.CELL_SIZE) {
-        
+    for (let cellLat = Math.floor(minLat / this.CELL_SIZE) * this.CELL_SIZE;
+      cellLat <= maxLat;
+      cellLat += this.CELL_SIZE) {
+      for (let cellLng = Math.floor(minLng / this.CELL_SIZE) * this.CELL_SIZE;
+        cellLng <= maxLng;
+        cellLng += this.CELL_SIZE) {
+
         // Check if cell center is within radius
         const distance = this.calculateDistance(lat, lng, cellLat, cellLng);
         if (distance <= radiusMeters) {
@@ -179,8 +240,8 @@ export class FogService {
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
@@ -231,8 +292,8 @@ export class FogService {
 
     // Limit features based on LOD settings
     if (unexploredCells.length > lodSettings.maxFogFeatures) {
-      // Use spatial sampling to reduce feature count while maintaining coverage
-      unexploredCells = this.spatialSampleCells(unexploredCells, lodSettings.maxFogFeatures);
+      // Aggregate cells into coarser buckets instead of sparse sampling to avoid checkerboard artifacts.
+      unexploredCells = this.aggregateCellsForLOD(unexploredCells, lodSettings.maxFogFeatures);
     }
 
     // Group adjacent cells into larger polygons for better performance
@@ -255,7 +316,7 @@ export class FogService {
         };
         features.push(feature);
       } else {
-        console.warn('🌫️ Skipping invalid polygon with insufficient coordinates:', polygon.coordinates?.length);
+        debugLog('FogService', `Skipping invalid polygon with insufficient coordinates: ${polygon.coordinates?.length}`);
       }
     });
 
@@ -274,8 +335,172 @@ export class FogService {
       particleQuality: 'medium',
       enableAnimations: true
     };
-    
+
     return this.generateFogFeaturesWithLOD(defaultLOD);
+  }
+
+  private normalizeExploredAreas(exploredAreas: FogInputArea[]): ExploredArea[] {
+    return exploredAreas
+      .map((area): ExploredArea | null => {
+        const center = 'center' in area ? area.center : undefined;
+        const latitude = typeof area.latitude === 'number'
+          ? area.latitude
+          : Array.isArray(center)
+            ? center[1]
+            : NaN;
+        const longitude = typeof area.longitude === 'number'
+          ? area.longitude
+          : Array.isArray(center)
+            ? center[0]
+            : NaN;
+        const radius = Number.isFinite(area.radius) && area.radius > 0 ? area.radius : this.DEFAULT_EXPLORATION_RADIUS;
+
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          return null;
+        }
+
+        const exploredAt = typeof area.explored_at === 'string'
+          ? area.explored_at
+          : 'exploredAt' in area && typeof area.exploredAt === 'number'
+            ? new Date(area.exploredAt).toISOString()
+            : '1970-01-01T00:00:00.000Z';
+
+        return {
+          latitude,
+          longitude,
+          radius,
+          explored_at: exploredAt,
+          ...(typeof area.accuracy === 'number' ? { accuracy: area.accuracy } : {}),
+        };
+      })
+      .filter((area): area is ExploredArea => area !== null);
+  }
+
+  private generateMergedFogFeatures(exploredAreas: ExploredArea[], zoomLevel: number, bounds: BoundingBox): FogFeature[] | null {
+    const relevantAreas = exploredAreas.filter(area => this.isAreaNearBounds(area, bounds));
+    if (relevantAreas.length === 0) {
+      return this.generateDefaultFogCoverage(bounds);
+    }
+
+    if (relevantAreas.length > this.MAX_BOOLEAN_OPERATION_AREAS) {
+      debugLog('FogService', `Skipping merged fog path (${relevantAreas.length} areas > ${this.MAX_BOOLEAN_OPERATION_AREAS})`);
+      return null;
+    }
+
+    const steps = this.getCircleStepsForZoom(zoomLevel);
+    const operationStartTime = performance.now();
+
+    const exploredPolygons = relevantAreas.map((area): Feature<Polygon> => {
+      const circle = turf.circle([area.longitude, area.latitude], area.radius / 1000, { steps, units: 'kilometers' });
+      return (turf.rewind as any)(circle, { reverse: false }) as Feature<Polygon>;
+    });
+
+    let exploredUnion: Feature<Polygon | MultiPolygon> | null = null;
+    for (const polygon of exploredPolygons) {
+      if (performance.now() - operationStartTime > this.MAX_BOOLEAN_OPERATION_TIME_MS) {
+        debugLog('FogService', `Merged fog path timed out after ${this.MAX_BOOLEAN_OPERATION_TIME_MS}ms`);
+        return null;
+      }
+
+      if (!exploredUnion) {
+        exploredUnion = polygon;
+        continue;
+      }
+
+      try {
+        const nextMerged = (turf.union as any)(exploredUnion, polygon) as Feature<Polygon | MultiPolygon> | null;
+        if (nextMerged) {
+          exploredUnion = nextMerged;
+        }
+      } catch (error) {
+        debugLog('FogService', `Union failed for merged fog path: ${String(error)}`);
+        return null;
+      }
+    }
+
+    if (!exploredUnion) {
+      return this.generateDefaultFogCoverage(bounds);
+    }
+
+    const outerPolygon = turf.polygon([[
+      [bounds.west, bounds.south],
+      [bounds.east, bounds.south],
+      [bounds.east, bounds.north],
+      [bounds.west, bounds.north],
+      [bounds.west, bounds.south],
+    ]]);
+
+    const differenceFn = turf.difference as unknown as (...args: unknown[]) => Feature<Polygon | MultiPolygon> | null;
+    let fogPolygon: Feature<Polygon | MultiPolygon> | null = null;
+
+    try {
+      fogPolygon = differenceFn(outerPolygon, exploredUnion);
+      if (!fogPolygon) {
+        fogPolygon = differenceFn(turf.featureCollection([outerPolygon, exploredUnion]));
+      }
+    } catch (firstError) {
+      try {
+        fogPolygon = differenceFn(turf.featureCollection([outerPolygon, exploredUnion]));
+      } catch (secondError) {
+        debugLog('FogService', `Difference failed for merged fog path: ${String(firstError)} / ${String(secondError)}`);
+        return null;
+      }
+    }
+
+    if (!fogPolygon) {
+      return this.generateDefaultFogCoverage(bounds);
+    }
+
+    const rewoundFog = (turf.rewind as any)(fogPolygon, { reverse: false }) as Feature<Polygon | MultiPolygon>;
+    return this.toFogFeatures(rewoundFog);
+  }
+
+  private toFogFeatures(geometry: Feature<Polygon | MultiPolygon>): FogFeature[] {
+    const fogFeatures: FogFeature[] = [];
+
+    if (geometry.geometry.type === 'Polygon') {
+      fogFeatures.push({
+        type: 'Feature',
+        properties: {
+          opacity: 1,
+          type: 'fog',
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: geometry.geometry.coordinates,
+        },
+      });
+      return fogFeatures;
+    }
+
+    for (const polygonCoordinates of geometry.geometry.coordinates) {
+      fogFeatures.push({
+        type: 'Feature',
+        properties: {
+          opacity: 1,
+          type: 'fog',
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: polygonCoordinates,
+        },
+      });
+    }
+
+    return fogFeatures;
+  }
+
+  private getCircleStepsForZoom(zoomLevel: number): number {
+    const steps = Math.round(12 + zoomLevel * 1.5);
+    return Math.max(12, Math.min(48, steps));
+  }
+
+  private isAreaNearBounds(area: ExploredArea, bounds: BoundingBox): boolean {
+    const radiusDegrees = (area.radius || this.DEFAULT_EXPLORATION_RADIUS) / 111320;
+    return area.latitude + radiusDegrees >= bounds.south &&
+      area.latitude - radiusDegrees <= bounds.north &&
+      area.longitude + radiusDegrees >= bounds.west &&
+      area.longitude - radiusDegrees <= bounds.east;
   }
 
   /**
@@ -301,7 +526,7 @@ export class FogService {
    */
   getGeographicArea(lat: number, lng: number, radiusMeters: number): GeographicArea {
     const radiusDegrees = radiusMeters / 111320;
-    
+
     return {
       center: [lng, lat],
       radius: radiusMeters,
@@ -317,12 +542,13 @@ export class FogService {
   /**
    * Calculate exploration percentage
    */
-  calculateExplorationPercentage(exploredAreas: ExploredArea[]): number {
-    if (exploredAreas.length === 0) return 0;
+  calculateExplorationPercentage(exploredAreas: FogInputArea[]): number {
+    const normalizedAreas = this.normalizeExploredAreas(exploredAreas);
+    if (normalizedAreas.length === 0) return 0;
 
     const totalExploredCells = new Set<string>();
-    
-    exploredAreas.forEach(area => {
+
+    normalizedAreas.forEach(area => {
       const cellsInArea = this.getCellsInRadius(
         area.latitude,
         area.longitude,
@@ -342,14 +568,14 @@ export class FogService {
    */
   optimizeGeometryForZoom(geometry: FogGeometry, zoomLevel: number): FogGeometry {
     const lodSettings = this.performanceMonitorService.getLODSettings(zoomLevel);
-    
+
     if (geometry.features.length <= lodSettings.maxFogFeatures) {
       return geometry;
     }
 
     // Simplify geometry by reducing feature count
     const simplifiedFeatures = geometry.features.slice(0, lodSettings.maxFogFeatures);
-    
+
     return {
       type: 'FeatureCollection',
       features: simplifiedFeatures
@@ -399,13 +625,13 @@ export class FogService {
   private cleanFogGeometryCache(): void {
     const now = Date.now();
     const keysToDelete: string[] = [];
-    
+
     this.fogGeometryCache.forEach((value, key) => {
       if (now - value.timestamp > this.CACHE_DURATION) {
         keysToDelete.push(key);
       }
     });
-    
+
     keysToDelete.forEach(key => this.fogGeometryCache.delete(key));
   }
 
@@ -419,17 +645,17 @@ export class FogService {
   }
 
   private isAreaInBounds(area: ExploredArea, bounds: BoundingBox): boolean {
-    return area.latitude >= bounds.south && 
-           area.latitude <= bounds.north && 
-           area.longitude >= bounds.west && 
-           area.longitude <= bounds.east;
+    return area.latitude >= bounds.south &&
+      area.latitude <= bounds.north &&
+      area.longitude >= bounds.west &&
+      area.longitude <= bounds.east;
   }
 
   private isCellInBounds(cell: GridCell, bounds: BoundingBox): boolean {
-    return cell.bounds.north >= bounds.south && 
-           cell.bounds.south <= bounds.north && 
-           cell.bounds.east >= bounds.west && 
-           cell.bounds.west <= bounds.east;
+    return cell.bounds.north >= bounds.south &&
+      cell.bounds.south <= bounds.north &&
+      cell.bounds.east >= bounds.west &&
+      cell.bounds.west <= bounds.east;
   }
 
   private getCellsInRadiusWithLOD(lat: number, lng: number, radiusMeters: number, cellSize: number): string[] {
@@ -441,13 +667,13 @@ export class FogService {
     const minLng = lng - radiusDegrees;
     const maxLng = lng + radiusDegrees;
 
-    for (let cellLat = Math.floor(minLat / cellSize) * cellSize; 
-         cellLat <= maxLat; 
-         cellLat += cellSize) {
-      for (let cellLng = Math.floor(minLng / cellSize) * cellSize; 
-           cellLng <= maxLng; 
-           cellLng += cellSize) {
-        
+    for (let cellLat = Math.floor(minLat / cellSize) * cellSize;
+      cellLat <= maxLat;
+      cellLat += cellSize) {
+      for (let cellLng = Math.floor(minLng / cellSize) * cellSize;
+        cellLng <= maxLng;
+        cellLng += cellSize) {
+
         const distance = this.calculateDistance(lat, lng, cellLat, cellLng);
         if (distance <= radiusMeters) {
           const cellId = this.getCellIdWithSize(cellLat, cellLng, cellSize);
@@ -464,13 +690,15 @@ export class FogService {
     const lat = parseFloat(latStr);
     const lng = parseFloat(lngStr);
 
+    // Bounds should extend FROM the snapped position BY cellSize
+    // (not centered at the snapped position)
     return {
       id: cellId,
       bounds: {
-        north: lat + cellSize / 2,
-        south: lat - cellSize / 2,
-        east: lng + cellSize / 2,
-        west: lng - cellSize / 2
+        north: lat + cellSize,
+        south: lat,
+        east: lng + cellSize,
+        west: lng
       },
       explored: false,
       fogOpacity: 1.0
@@ -486,16 +714,127 @@ export class FogService {
   private spatialSampleCells(cells: GridCell[], maxCount: number): GridCell[] {
     if (cells.length <= maxCount) return cells;
 
-    // Use spatial sampling to maintain good coverage
-    const step = Math.ceil(cells.length / maxCount);
-    const sampled: GridCell[] = [];
-    
-    for (let i = 0; i < cells.length; i += step) {
-      sampled.push(cells[i]);
-      if (sampled.length >= maxCount) break;
+    // Use PROPER spatial sampling to maintain even geographic coverage
+    // Group cells into a grid and pick one from each grid cell
+
+    // Find bounds of all cells
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    for (const cell of cells) {
+      const centerLat = (cell.bounds.north + cell.bounds.south) / 2;
+      const centerLng = (cell.bounds.east + cell.bounds.west) / 2;
+      minLat = Math.min(minLat, centerLat);
+      maxLat = Math.max(maxLat, centerLat);
+      minLng = Math.min(minLng, centerLng);
+      maxLng = Math.max(maxLng, centerLng);
     }
-    
+
+    // Calculate grid dimensions for sampling
+    const targetGridCells = Math.sqrt(maxCount);
+    const latStep = (maxLat - minLat) / targetGridCells;
+    const lngStep = (maxLng - minLng) / targetGridCells;
+
+    // Create sampling grid
+    const sampledMap = new Map<string, GridCell>();
+
+    for (const cell of cells) {
+      const centerLat = (cell.bounds.north + cell.bounds.south) / 2;
+      const centerLng = (cell.bounds.east + cell.bounds.west) / 2;
+
+      // Determine which grid bucket this cell belongs to
+      const gridRow = Math.floor((centerLat - minLat) / (latStep || 1));
+      const gridCol = Math.floor((centerLng - minLng) / (lngStep || 1));
+      const gridKey = `${gridRow}_${gridCol}`;
+
+      // Keep only one cell per grid bucket (first one found)
+      if (!sampledMap.has(gridKey)) {
+        sampledMap.set(gridKey, cell);
+      }
+    }
+
+    const sampled = Array.from(sampledMap.values());
+
+    // If we still have too many, take a simple subset
+    if (sampled.length > maxCount) {
+      return sampled.slice(0, maxCount);
+    }
+
     return sampled;
+  }
+
+  private aggregateCellsForLOD(cells: GridCell[], maxCount: number): GridCell[] {
+    if (cells.length <= maxCount) {
+      return cells;
+    }
+
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+    for (const cell of cells) {
+      minLat = Math.min(minLat, cell.bounds.south);
+      maxLat = Math.max(maxLat, cell.bounds.north);
+      minLng = Math.min(minLng, cell.bounds.west);
+      maxLng = Math.max(maxLng, cell.bounds.east);
+    }
+
+    const targetGridCells = Math.max(1, Math.floor(Math.sqrt(maxCount)));
+    const latStep = Math.max((maxLat - minLat) / targetGridCells, this.CELL_SIZE);
+    const lngStep = Math.max((maxLng - minLng) / targetGridCells, this.CELL_SIZE);
+
+    const buckets = new Map<string, {
+      south: number;
+      west: number;
+      north: number;
+      east: number;
+      opacitySum: number;
+      count: number;
+    }>();
+
+    for (const cell of cells) {
+      const centerLat = (cell.bounds.north + cell.bounds.south) / 2;
+      const centerLng = (cell.bounds.east + cell.bounds.west) / 2;
+      const row = Math.floor((centerLat - minLat) / latStep);
+      const col = Math.floor((centerLng - minLng) / lngStep);
+      const key = `${row}_${col}`;
+
+      const existing = buckets.get(key);
+      if (!existing) {
+        buckets.set(key, {
+          south: cell.bounds.south,
+          west: cell.bounds.west,
+          north: cell.bounds.north,
+          east: cell.bounds.east,
+          opacitySum: cell.fogOpacity,
+          count: 1,
+        });
+        continue;
+      }
+
+      existing.south = Math.min(existing.south, cell.bounds.south);
+      existing.west = Math.min(existing.west, cell.bounds.west);
+      existing.north = Math.max(existing.north, cell.bounds.north);
+      existing.east = Math.max(existing.east, cell.bounds.east);
+      existing.opacitySum += cell.fogOpacity;
+      existing.count += 1;
+    }
+
+    const aggregated: GridCell[] = [];
+    buckets.forEach((bucket, index) => {
+      aggregated.push({
+        id: `agg_${index}`,
+        bounds: {
+          south: bucket.south,
+          west: bucket.west,
+          north: bucket.north,
+          east: bucket.east,
+        },
+        explored: false,
+        exploredAt: undefined,
+        fogOpacity: bucket.opacitySum / bucket.count,
+      });
+    });
+
+    return aggregated.slice(0, maxCount);
   }
 
   private mergeAdjacentCells(cells: GridCell[]): Array<{
@@ -527,8 +866,8 @@ export class FogService {
    * Generate default fog coverage when no explored areas exist
    */
   private generateDefaultFogCoverage(bounds?: BoundingBox): FogFeature[] {
-    console.log('🌫️ Generating default fog coverage');
-    
+    debugLog('FogService', 'Generating default fog coverage');
+
     // Define default bounds if none provided (covers a reasonable area around current user location)
     const defaultBounds = bounds || {
       north: 37.45,   // Adjusted to be around Mountain View/Palo Alto area
@@ -537,42 +876,31 @@ export class FogService {
       west: -122.15
     };
 
-    // Create a grid of fog cells covering the bounds
-    const features: FogFeature[] = [];
-    const cellSize = this.CELL_SIZE;
-    
-    // Generate fog cells in a grid pattern
-    for (let lat = defaultBounds.south; lat < defaultBounds.north; lat += cellSize) {
-      for (let lng = defaultBounds.west; lng < defaultBounds.east; lng += cellSize) {
-        // Ensure coordinates are properly formatted for Mapbox
-        const coordinates = [
-          [lng, lat],                    // Southwest corner
-          [lng + cellSize, lat],         // Southeast corner
-          [lng + cellSize, lat + cellSize], // Northeast corner
-          [lng, lat + cellSize],         // Northwest corner
-          [lng, lat]                     // Close the polygon (repeat first point)
-        ];
+    const north = Math.max(defaultBounds.north, defaultBounds.south);
+    const south = Math.min(defaultBounds.north, defaultBounds.south);
+    const hasValidEastWest = Number.isFinite(defaultBounds.east) && Number.isFinite(defaultBounds.west) && defaultBounds.east > defaultBounds.west;
+    const east = hasValidEastWest ? defaultBounds.east : 180;
+    const west = hasValidEastWest ? defaultBounds.west : -180;
 
-        // Validate that we have at least 4 points and the polygon is closed
-        if (coordinates.length >= 4) {
-          const feature: FogFeature = {
-            type: 'Feature',
-            properties: {
-              opacity: 0.8,
-              type: 'fog'
-            },
-            geometry: {
-              type: 'Polygon',
-              coordinates: [coordinates] // Note: coordinates is an array of rings
-            }
-          };
-          features.push(feature);
-        }
+    const feature: FogFeature = {
+      type: 'Feature',
+      properties: {
+        opacity: 1,
+        type: 'fog'
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [west, south],
+          [east, south],
+          [east, north],
+          [west, north],
+          [west, south]
+        ]]
       }
-    }
+    };
 
-    console.log(`🌫️ Generated ${features.length} default fog features`);
-    return features;
+    return [feature];
   }
 }
 

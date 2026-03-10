@@ -1,20 +1,20 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  Alert
 } from 'react-native';
 import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
+import { fogLocationIntegrationService } from '../services';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { loadMapStyle } from '../store/persistence';
 import {
-  setFollowUserLocation,
-  centerOnLocation,
-  setZoom,
-  resetViewport
+  setUserLocation,
+  setMapStyle,
+  resetViewport,
 } from '../store/slices/mapSlice';
 import { selectMapStatus, selectMapAndLocation } from '../store/selectors';
 
@@ -25,26 +25,89 @@ interface MapScreenProps {
 const MapScreen: React.FC<MapScreenProps> = () => {
   const dispatch = useAppDispatch();
   const mapStatus = useAppSelector(selectMapStatus);
-  const { viewport, userLocation, isTracking, hasPermission, isMapReady } = useAppSelector(selectMapAndLocation);
+  const { viewport, isTracking, isMapReady } = useAppSelector(selectMapAndLocation);
+  const integrationStarted = useRef(false);
 
-  // Navigation control handlers
-  const handleCenterOnUser = () => {
-    if (userLocation) {
-      dispatch(centerOnLocation(userLocation));
-      dispatch(setFollowUserLocation(true));
-    } else {
-      Alert.alert('Location Not Available', 'Unable to find your current location. Please ensure location services are enabled.');
-    }
-  };
+  // Initialize fog-location integration
+  useEffect(() => {
+    let isMounted = true;
+    let retryTimeout: NodeJS.Timeout | null = null;
 
-  const handleZoomIn = () => {
-    const newZoom = Math.min(viewport.zoom + 1, MAPBOX_CONFIG.MAX_ZOOM || 20);
-    dispatch(setZoom(newZoom));
-  };
+    const initializeIntegration = async () => {
+      if (integrationStarted.current || !isMounted) return;
 
-  const handleZoomOut = () => {
-    const newZoom = Math.max(viewport.zoom - 1, MAPBOX_CONFIG.MIN_ZOOM || 0);
-    dispatch(setZoom(newZoom));
+      // Import database service to check if ready
+      const { getDatabaseService } = await import('../database/services');
+      const dbService = getDatabaseService();
+
+      // Check if database is ready, if not, wait and retry
+      if (!dbService.isReady()) {
+        console.log('Database not ready yet, waiting to start fog-location integration...');
+        retryTimeout = setTimeout(() => {
+          if (isMounted) {
+            initializeIntegration();
+          }
+        }, 500); // Retry after 500ms
+        return;
+      }
+
+      try {
+        console.log('Initializing fog-location integration...');
+        const success = await fogLocationIntegrationService.start();
+
+        if (success && isMounted) {
+          integrationStarted.current = true;
+          console.log('Fog-location integration started successfully');
+        } else if (isMounted) {
+          console.warn('Failed to start fog-location integration');
+        }
+      } catch (error) {
+        if (isMounted) {
+          console.error('Error initializing fog-location integration:', error);
+        }
+      }
+    };
+
+    initializeIntegration();
+
+    // Cleanup on unmount
+    return () => {
+      isMounted = false;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+      if (integrationStarted.current) {
+        fogLocationIntegrationService.stop();
+        integrationStarted.current = false;
+      }
+    };
+  }, []); // Empty dependency array is correct here
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const restoreMapStyle = async () => {
+      const savedMapStyle = await loadMapStyle();
+      if (!isMounted || !savedMapStyle) {
+        return;
+      }
+
+      dispatch(setMapStyle(savedMapStyle));
+    };
+
+    restoreMapStyle().catch(error => {
+      console.error('Failed to restore map style:', error);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dispatch]);
+
+  const handleLocationUpdate = (location: [number, number]) => {
+    // Update Redux state with new location
+    dispatch(setUserLocation(location));
+    console.log('Location updated:', location);
   };
 
   const handleResetView = () => {
@@ -84,42 +147,6 @@ const MapScreen: React.FC<MapScreenProps> = () => {
             </View>
           </View>
         )}
-
-        {/* Navigation Controls */}
-        <View style={styles.controlsContainer}>
-          {/* Zoom Controls */}
-          <View style={styles.zoomControls}>
-            <TouchableOpacity
-              style={styles.controlButton}
-              onPress={handleZoomIn}
-              accessibilityLabel="Zoom in"
-            >
-              <Text style={styles.controlButtonText}>+</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.controlButton}
-              onPress={handleZoomOut}
-              accessibilityLabel="Zoom out"
-            >
-              <Text style={styles.controlButtonText}>−</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Location Controls */}
-          <View style={styles.locationControls}>
-            <TouchableOpacity
-              style={[
-                styles.controlButton,
-                styles.locationButton,
-                userLocation ? styles.locationButtonActive : styles.locationButtonInactive
-              ]}
-              onPress={handleCenterOnUser}
-              accessibilityLabel="Center on current location"
-            >
-              <Text style={styles.locationButtonText}>📍</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         {/* Status Indicators */}
         <View style={styles.statusContainer}>
@@ -202,52 +229,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  controlsContainer: {
-    position: 'absolute',
-    right: 16,
-    top: 60,
-    zIndex: 1000,
-  },
-  zoomControls: {
-    marginBottom: 16,
-  },
-  locationControls: {
-    // Positioned below zoom controls
-  },
-  controlButton: {
-    width: 48,
-    height: 48,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  controlButtonText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333333',
-  },
-  locationButton: {
-    // Additional styles for location button
-  },
-  locationButtonActive: {
-    backgroundColor: 'rgba(74, 144, 226, 0.95)',
-  },
-  locationButtonInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-  },
-  locationButtonText: {
-    fontSize: 20,
-  },
+
   statusContainer: {
     position: 'absolute',
     top: 60,

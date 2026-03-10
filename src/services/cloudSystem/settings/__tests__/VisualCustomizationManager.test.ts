@@ -35,11 +35,11 @@ describe('VisualCustomizationManager', () => {
 
       const settings = manager.getCurrentSettings();
       expect(settings.selectedColorScheme).toBe('day');
-      expect(settings.selectedStylePreset).toBe('realistic');
-      expect(settings.opacity).toBe(0.8);
+      expect(settings.selectedStylePreset).toBe('exploration_soft_clouds');
+      expect(settings.opacity).toBe(0.86);
     });
 
-    it('should load saved settings', async () => {
+    it('should force-migrate saved settings when rollout version is missing', async () => {
       const savedSettings = {
         selectedColorScheme: 'night',
         selectedStylePreset: 'dramatic',
@@ -57,10 +57,59 @@ describe('VisualCustomizationManager', () => {
       await manager.initialize();
 
       const settings = manager.getCurrentSettings();
+      expect(settings.selectedColorScheme).toBe('day');
+      expect(settings.selectedStylePreset).toBe('exploration_soft_clouds');
+      expect(settings.enableCustomColors).toBe(false);
+      expect(mockAsyncStorage.setItem).toHaveBeenCalledWith('cloud_visual_settings_migration_version', '1');
+    });
+
+    it('should preserve saved settings after the rollout migration has already been applied', async () => {
+      const savedSettings = {
+        selectedColorScheme: 'night',
+        selectedStylePreset: 'dramatic',
+        opacity: 0.9,
+        contrast: 1.2,
+      };
+
+      mockAsyncStorage.getItem.mockImplementation((key) => {
+        if (key === 'cloud_visual_settings') {
+          return Promise.resolve(JSON.stringify(savedSettings));
+        }
+        if (key === 'cloud_visual_settings_migration_version') {
+          return Promise.resolve('1');
+        }
+        return Promise.resolve(null);
+      });
+
+      await manager.initialize();
+
+      const settings = manager.getCurrentSettings();
       expect(settings.selectedColorScheme).toBe('night');
       expect(settings.selectedStylePreset).toBe('dramatic');
       expect(settings.opacity).toBe(0.9);
       expect(settings.contrast).toBe(1.2);
+    });
+
+    it('should not reapply the rollout migration after the stored version is current', async () => {
+      mockAsyncStorage.getItem.mockImplementation((key) => {
+        if (key === 'cloud_visual_settings_migration_version') {
+          return Promise.resolve('1');
+        }
+        if (key === 'cloud_visual_settings') {
+          return Promise.resolve(JSON.stringify({
+            selectedColorScheme: 'storm',
+            selectedStylePreset: 'dramatic',
+            opacity: 0.95,
+            contrast: 1.4,
+          }));
+        }
+        return Promise.resolve(null);
+      });
+
+      await manager.initialize();
+
+      expect(mockAsyncStorage.setItem).not.toHaveBeenCalledWith('cloud_visual_settings', expect.stringContaining('exploration_soft_clouds'));
+      expect(manager.getCurrentSettings().selectedStylePreset).toBe('dramatic');
     });
   });
 
@@ -131,6 +180,10 @@ describe('VisualCustomizationManager', () => {
       const presets = manager.getStylePresets();
       expect(presets.length).toBeGreaterThan(0);
       
+      const explorationPreset = presets.find(p => p.id === 'exploration_soft_clouds');
+      expect(explorationPreset).toBeDefined();
+      expect(explorationPreset?.name).toBe('Exploration Soft Clouds');
+
       const realisticPreset = presets.find(p => p.id === 'realistic');
       expect(realisticPreset).toBeDefined();
       expect(realisticPreset?.name).toBe('Realistic');
