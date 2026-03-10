@@ -7,14 +7,18 @@ import {
   ActivityIndicator,
   Alert
 } from 'react-native';
+import Mapbox from '@rnmapbox/maps';
 import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
+import { MapStyleOption } from '../types/map';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { loadMapStyle, saveMapStyle } from '../store/persistence';
 import {
   setUserLocation,
   setFollowUserLocation,
   centerOnLocation,
   setZoom,
+  setMapStyle,
   resetViewport
 } from '../store/slices/mapSlice';
 import { selectMapStatus, selectMapAndLocation } from '../store/selectors';
@@ -24,10 +28,19 @@ interface MapScreenProps {
   // Props can be expanded for additional functionality
 }
 
+const MAP_STYLE_OPTIONS: MapStyleOption[] = [
+  { id: 'streets', label: 'Streets', styleURL: Mapbox.StyleURL.Street },
+  { id: 'dark', label: 'Dark', styleURL: Mapbox.StyleURL.Dark },
+  { id: 'light', label: 'Light', styleURL: Mapbox.StyleURL.Light },
+  { id: 'outdoors', label: 'Outdoors', styleURL: Mapbox.StyleURL.Outdoors },
+  { id: 'satellite', label: 'Satellite', styleURL: Mapbox.StyleURL.Satellite },
+];
+
 const MapScreen: React.FC<MapScreenProps> = () => {
   const dispatch = useAppDispatch();
   const mapStatus = useAppSelector(selectMapStatus);
-  const { viewport, userLocation, isTracking, hasPermission, isMapReady } = useAppSelector(selectMapAndLocation);
+  const { viewport, userLocation, isTracking, isMapReady } = useAppSelector(selectMapAndLocation);
+  const { mapStyleId } = useAppSelector(state => state.map);
   const integrationStarted = useRef(false);
 
   // Initialize fog-location integration
@@ -85,6 +98,27 @@ const MapScreen: React.FC<MapScreenProps> = () => {
     };
   }, []); // Empty dependency array is correct here
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const restoreMapStyle = async () => {
+      const savedMapStyle = await loadMapStyle();
+      if (!isMounted || !savedMapStyle) {
+        return;
+      }
+
+      dispatch(setMapStyle(savedMapStyle));
+    };
+
+    restoreMapStyle().catch(error => {
+      console.error('Failed to restore map style:', error);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dispatch]);
+
   const handleLocationUpdate = (location: [number, number]) => {
     // Update Redux state with new location
     dispatch(setUserLocation(location));
@@ -113,6 +147,13 @@ const MapScreen: React.FC<MapScreenProps> = () => {
 
   const handleResetView = () => {
     dispatch(resetViewport());
+  };
+
+  const handleMapStyleChange = (styleOption: MapStyleOption) => {
+    dispatch(setMapStyle({ id: styleOption.id, styleURL: styleOption.styleURL }));
+    saveMapStyle({ id: styleOption.id, styleURL: styleOption.styleURL }).catch(error => {
+      console.error('Failed to persist map style:', error);
+    });
   };
 
   console.log('🗺️ MapScreen render - isMapReady:', isMapReady, 'hasError:', mapStatus.hasError);
@@ -154,6 +195,29 @@ const MapScreen: React.FC<MapScreenProps> = () => {
 
         {/* Navigation Controls */}
         <View style={styles.controlsContainer}>
+          <View style={styles.mapStyleContainer}>
+            {MAP_STYLE_OPTIONS.map(styleOption => (
+              <TouchableOpacity
+                key={styleOption.id}
+                style={[
+                  styles.mapStyleButton,
+                  mapStyleId === styleOption.id && styles.mapStyleButtonActive,
+                ]}
+                onPress={() => handleMapStyleChange(styleOption)}
+                accessibilityLabel={`Set map style to ${styleOption.label}`}
+              >
+                <Text
+                  style={[
+                    styles.mapStyleButtonText,
+                    mapStyleId === styleOption.id && styles.mapStyleButtonTextActive,
+                  ]}
+                >
+                  {styleOption.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           {/* Zoom Controls */}
           <View style={styles.zoomControls}>
             <TouchableOpacity
@@ -274,6 +338,28 @@ const styles = StyleSheet.create({
     right: 16,
     top: 60,
     zIndex: 1000,
+  },
+  mapStyleContainer: {
+    marginBottom: 16,
+    gap: 8,
+  },
+  mapStyleButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  mapStyleButtonActive: {
+    backgroundColor: 'rgba(74, 144, 226, 0.95)',
+  },
+  mapStyleButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  mapStyleButtonTextActive: {
+    color: '#ffffff',
   },
   zoomControls: {
     marginBottom: 16,
