@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { MapViewport } from '../../types/map';
+import { MapStyleId, MapViewport } from '../../types/map';
 import { MAPBOX_CONFIG } from '../../config/mapbox';
 
 interface MapState {
@@ -9,6 +9,8 @@ interface MapState {
   error: string | null;
   userLocation: [number, number] | null;
   followUserLocation: boolean;
+  mapStyleId: MapStyleId;
+  mapStyleURL: string;
   lastViewportUpdate: number;
 }
 
@@ -24,6 +26,8 @@ const initialState: MapState = {
   error: null,
   userLocation: null,
   followUserLocation: true,
+  mapStyleId: 'streets',
+  mapStyleURL: MAPBOX_CONFIG.DEFAULT_STYLE,
   lastViewportUpdate: Date.now(),
 };
 
@@ -70,6 +74,11 @@ const mapSlice = createSlice({
         state.viewport.center = state.userLocation;
       }
     },
+
+    setMapStyle: (state, action: PayloadAction<{ id: MapStyleId; styleURL: string }>) => {
+      state.mapStyleId = action.payload.id;
+      state.mapStyleURL = action.payload.styleURL;
+    },
     
     centerOnLocation: (state, action: PayloadAction<[number, number]>) => {
       state.viewport.center = action.payload;
@@ -107,6 +116,7 @@ export const {
   updateViewport,
   setUserLocation,
   setFollowUserLocation,
+  setMapStyle,
   centerOnLocation,
   setZoom,
   setBearing,

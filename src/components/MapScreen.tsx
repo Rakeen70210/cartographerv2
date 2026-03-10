@@ -5,17 +5,15 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  Alert
 } from 'react-native';
 import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { loadMapStyle } from '../store/persistence';
 import {
   setUserLocation,
-  setFollowUserLocation,
-  centerOnLocation,
-  setZoom,
-  resetViewport
+  setMapStyle,
+  resetViewport,
 } from '../store/slices/mapSlice';
 import { selectMapStatus, selectMapAndLocation } from '../store/selectors';
 import { fogLocationIntegrationService } from '../services';
@@ -27,7 +25,7 @@ interface MapScreenProps {
 const MapScreen: React.FC<MapScreenProps> = () => {
   const dispatch = useAppDispatch();
   const mapStatus = useAppSelector(selectMapStatus);
-  const { viewport, userLocation, isTracking, hasPermission, isMapReady } = useAppSelector(selectMapAndLocation);
+  const { viewport, isTracking, isMapReady } = useAppSelector(selectMapAndLocation);
   const integrationStarted = useRef(false);
 
   // Initialize fog-location integration
@@ -85,30 +83,31 @@ const MapScreen: React.FC<MapScreenProps> = () => {
     };
   }, []); // Empty dependency array is correct here
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const restoreMapStyle = async () => {
+      const savedMapStyle = await loadMapStyle();
+      if (!isMounted || !savedMapStyle) {
+        return;
+      }
+
+      dispatch(setMapStyle(savedMapStyle));
+    };
+
+    restoreMapStyle().catch(error => {
+      console.error('Failed to restore map style:', error);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dispatch]);
+
   const handleLocationUpdate = (location: [number, number]) => {
     // Update Redux state with new location
     dispatch(setUserLocation(location));
     console.log('Location updated:', location);
-  };
-
-  // Navigation control handlers
-  const handleCenterOnUser = () => {
-    if (userLocation) {
-      dispatch(centerOnLocation(userLocation));
-      dispatch(setFollowUserLocation(true));
-    } else {
-      Alert.alert('Location Not Available', 'Unable to find your current location. Please ensure location services are enabled.');
-    }
-  };
-
-  const handleZoomIn = () => {
-    const newZoom = Math.min(viewport.zoom + 1, MAPBOX_CONFIG.MAX_ZOOM || 20);
-    dispatch(setZoom(newZoom));
-  };
-
-  const handleZoomOut = () => {
-    const newZoom = Math.max(viewport.zoom - 1, MAPBOX_CONFIG.MIN_ZOOM || 0);
-    dispatch(setZoom(newZoom));
   };
 
   const handleResetView = () => {
@@ -151,42 +150,6 @@ const MapScreen: React.FC<MapScreenProps> = () => {
             </View>
           </View>
         )}
-
-        {/* Navigation Controls */}
-        <View style={styles.controlsContainer}>
-          {/* Zoom Controls */}
-          <View style={styles.zoomControls}>
-            <TouchableOpacity
-              style={styles.controlButton}
-              onPress={handleZoomIn}
-              accessibilityLabel="Zoom in"
-            >
-              <Text style={styles.controlButtonText}>+</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.controlButton}
-              onPress={handleZoomOut}
-              accessibilityLabel="Zoom out"
-            >
-              <Text style={styles.controlButtonText}>−</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Location Controls */}
-          <View style={styles.locationControls}>
-            <TouchableOpacity
-              style={[
-                styles.controlButton,
-                styles.locationButton,
-                userLocation ? styles.locationButtonActive : styles.locationButtonInactive
-              ]}
-              onPress={handleCenterOnUser}
-              accessibilityLabel="Center on current location"
-            >
-              <Text style={styles.locationButtonText}>📍</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         {/* Status Indicators */}
         <View style={styles.statusContainer}>
@@ -269,52 +232,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  controlsContainer: {
-    position: 'absolute',
-    right: 16,
-    top: 60,
-    zIndex: 1000,
-  },
-  zoomControls: {
-    marginBottom: 16,
-  },
-  locationControls: {
-    // Positioned below zoom controls
-  },
-  controlButton: {
-    width: 48,
-    height: 48,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  controlButtonText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333333',
-  },
-  locationButton: {
-    // Additional styles for location button
-  },
-  locationButtonActive: {
-    backgroundColor: 'rgba(74, 144, 226, 0.95)',
-  },
-  locationButtonInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-  },
-  locationButtonText: {
-    fontSize: 20,
-  },
+
   statusContainer: {
     position: 'absolute',
     top: 60,

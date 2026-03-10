@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { MAPBOX_CONFIG, validateMapboxConfig } from '../config/mapbox';
 import { MapContainerProps } from '../types/map';
@@ -49,6 +49,7 @@ type MapboxMap = {
   remove: () => void;
   removeLayer: (id: string) => void;
   removeSource: (id: string) => void;
+  setStyle: (style: string) => void;
   setLayoutProperty: (layerId: string, name: string, value: unknown) => void;
   setPaintProperty: (layerId: string, name: string, value: unknown) => void;
 };
@@ -324,7 +325,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
   initialZoom = MAPBOX_CONFIG.DEFAULT_ZOOM,
 }) => {
   const dispatch = useAppDispatch();
-  const { viewport, followUserLocation } = useAppSelector(state => state.map);
+  const { viewport, followUserLocation, mapStyleURL } = useAppSelector(state => state.map);
   const { exploredAreas } = useAppSelector(state => state.exploration);
   const fogVisible = useAppSelector(state => state.fog.isVisible);
   const fogOpacity = useAppSelector(state => state.fog.opacity);
@@ -342,11 +343,10 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const lastMoveRefreshTimeRef = useRef(0);
   const fogCoverageBoundsRef = useRef<BoundingBox | null>(null);
   const explorationCoverageBoundsRef = useRef<BoundingBox | null>(null);
+  const activeMapStyleRef = useRef(mapStyleURL);
   const databaseService = getDatabaseService();
   const fogServiceRef = useRef(getFogService());
   const [fogGeometry, setFogGeometry] = useState<FogGeometry | null>(null);
-
-  const mapStyle = useMemo(() => MAPBOX_CONFIG.DEFAULT_STYLE, []);
 
   const followUserLocationRef = useRef(followUserLocation);
   const onLocationUpdateRef = useRef(onLocationUpdate);
@@ -575,7 +575,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
         const map = new mapboxgl.Map({
           container,
-          style: mapStyle,
+          style: mapStyleURL,
           center: startCenter,
           zoom: startZoom,
           bearing: savedViewport?.bearing ?? 0,
@@ -585,13 +585,21 @@ const MapContainer: React.FC<MapContainerProps> = ({
         mapRef.current = map;
         mapLoadedRef.current = false;
 
+        // Use the latest style URL from the ref (not the closure-captured value)
+        // to handle the case where Redux state changed while scripts were loading.
+        const latestStyleURL = activeMapStyleRef.current;
+        if (latestStyleURL !== mapStyleURL) {
+          map.setStyle(latestStyleURL);
+        } else {
+          activeMapStyleRef.current = mapStyleURL;
+        }
+
         if (cancelled || initId !== initRequestIdRef.current) {
           map.remove();
           mapRef.current = null;
           return;
         }
 
-        map.addControl(new mapboxgl.NavigationControl(), 'top-right');
         map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-right');
 
         const geolocate = new mapboxgl.GeolocateControl({
@@ -726,7 +734,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
       }
       setFogGeometry(null);
     };
-  }, [dispatch, initialCenter, initialZoom, mapStyle, refreshCoverage, updateFogLayer]);
+  }, [dispatch, initialCenter, initialZoom, refreshCoverage, updateFogLayer]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -774,6 +782,39 @@ const MapContainer: React.FC<MapContainerProps> = ({
     if (!mapRef.current) return;
     applyFogVisibility();
   }, [applyFogVisibility, fogVisible, fogOpacity]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      activeMapStyleRef.current = mapStyleURL;
+      return;
+    }
+
+    if (activeMapStyleRef.current === mapStyleURL) {
+      return;
+    }
+
+    activeMapStyleRef.current = mapStyleURL;
+
+    let restored = false;
+    const restoreFogLayer = () => {
+      if (restored) {
+        return;
+      }
+      restored = true;
+      map.off?.('style.load', restoreFogLayer);
+      refreshCoverage(true).catch(error => {
+        console.error('Failed to refresh fog coverage after style change:', error);
+      });
+    };
+
+    map.on('style.load', restoreFogLayer);
+    map.setStyle(mapStyleURL);
+
+    return () => {
+      map.off?.('style.load', restoreFogLayer);
+    };
+  }, [mapStyleURL, refreshCoverage]);
 
   useEffect(() => {
     let isMounted = true;

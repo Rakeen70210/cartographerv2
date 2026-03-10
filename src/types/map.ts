@@ -18,6 +18,14 @@ export interface MapViewport {
   pitch?: number;
 }
 
+export type MapStyleId = 'streets' | 'dark' | 'light' | 'satellite' | 'outdoors';
+
+export interface MapStyleOption {
+  id: MapStyleId;
+  label: string;
+  styleURL: string;
+}
+
 export interface MapGestureEvent {
   geometry: {
     coordinates: [number, number];
