@@ -7,8 +7,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import MapContainer from './MapContainer';
-import { MAPBOX_CONFIG, MAPBOX_STYLE_URLS } from '../config/mapbox';
-import { MapStyleOption } from '../types/map';
+import { MAPBOX_CONFIG } from '../config/mapbox';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { loadMapStyle } from '../store/persistence';
 import {
@@ -22,14 +21,6 @@ import { fogLocationIntegrationService } from '../services';
 interface MapScreenProps {
   // Props can be expanded for additional functionality
 }
-
-export const MAP_STYLE_OPTIONS: MapStyleOption[] = [
-  { id: 'streets', label: 'Streets', styleURL: MAPBOX_STYLE_URLS.streets },
-  { id: 'dark', label: 'Dark', styleURL: MAPBOX_STYLE_URLS.dark },
-  { id: 'light', label: 'Light', styleURL: MAPBOX_STYLE_URLS.light },
-  { id: 'outdoors', label: 'Outdoors', styleURL: MAPBOX_STYLE_URLS.outdoors },
-  { id: 'satellite', label: 'Satellite', styleURL: MAPBOX_STYLE_URLS.satellite },
-];
 
 const MapScreen: React.FC<MapScreenProps> = () => {
   const dispatch = useAppDispatch();

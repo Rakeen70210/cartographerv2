@@ -12,7 +12,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchProfileStats, refreshStats } from '../store/slices/profileSlice';
 import { setMapStyle } from '../store/slices/mapSlice';
 import { saveMapStyle } from '../store/persistence';
-import { MAP_STYLE_OPTIONS } from './MapScreen';
+import { MAP_STYLE_OPTIONS } from '../config/mapbox';
 import { MapStyleOption } from '../types/map';
 import { cloudFogIntegration, fogSystemCompatibility } from '../services/cloudSystem/integration';
 import { BackupManager } from './BackupManager';
