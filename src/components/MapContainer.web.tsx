@@ -538,7 +538,15 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
         mapRef.current = map;
         mapLoadedRef.current = false;
-        activeMapStyleRef.current = mapStyleURL;
+
+        // Use the latest style URL from the ref (not the closure-captured value)
+        // to handle the case where Redux state changed while scripts were loading.
+        const latestStyleURL = activeMapStyleRef.current;
+        if (latestStyleURL !== mapStyleURL) {
+          map.setStyle(latestStyleURL);
+        } else {
+          activeMapStyleRef.current = mapStyleURL;
+        }
 
         if (cancelled || initId !== initRequestIdRef.current) {
           map.remove();

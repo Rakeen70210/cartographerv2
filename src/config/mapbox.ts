@@ -1,13 +1,29 @@
 // Mapbox configuration
 // Access token is loaded from environment variables
 
-export const MAPBOX_STYLE_URLS = {
+import { MapStyleId, MapStyleOption } from '../types/map';
+
+export const MAPBOX_STYLE_URLS: Record<MapStyleId, string> = {
   streets: 'mapbox://styles/mapbox/streets-v12',
   dark: 'mapbox://styles/mapbox/dark-v11',
   light: 'mapbox://styles/mapbox/light-v11',
   outdoors: 'mapbox://styles/mapbox/outdoors-v12',
   satellite: 'mapbox://styles/mapbox/satellite-v9',
-} as const;
+};
+
+const MAP_STYLE_LABELS: Record<MapStyleId, string> = {
+  streets: 'Streets',
+  dark: 'Dark',
+  light: 'Light',
+  outdoors: 'Outdoors',
+  satellite: 'Satellite',
+};
+
+export const MAP_STYLE_OPTIONS: MapStyleOption[] = (Object.keys(MAPBOX_STYLE_URLS) as MapStyleId[]).map(id => ({
+  id,
+  label: MAP_STYLE_LABELS[id],
+  styleURL: MAPBOX_STYLE_URLS[id],
+}));
 
 export const MAPBOX_CONFIG = {
   // Mapbox access token from environment variables

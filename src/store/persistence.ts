@@ -1,9 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapStyleId, MapViewport } from '../types/map';
+import { MAPBOX_STYLE_URLS } from '../config/mapbox';
 
 const VIEWPORT_STORAGE_KEY = '@cartographer/viewport';
 const EXPLORATION_STORAGE_KEY = '@cartographer/exploration';
 const MAP_STYLE_STORAGE_KEY = '@cartographer/map-style';
+
+const VALID_STYLE_IDS = new Set<string>(Object.keys(MAPBOX_STYLE_URLS));
 
 interface PersistedMapStyle {
   id: MapStyleId;
@@ -77,7 +80,13 @@ export const loadMapStyle = async (): Promise<PersistedMapStyle | null> => {
   try {
     const styleData = await AsyncStorage.getItem(MAP_STYLE_STORAGE_KEY);
     if (styleData) {
-      return JSON.parse(styleData) as PersistedMapStyle;
+      const parsed = JSON.parse(styleData);
+      if (parsed && typeof parsed.id === 'string' && VALID_STYLE_IDS.has(parsed.id)) {
+        const id = parsed.id as MapStyleId;
+        return { id, styleURL: MAPBOX_STYLE_URLS[id] };
+      }
+      console.warn('Invalid persisted map style, falling back to default:', parsed);
+      return null;
     }
     return null;
   } catch (error) {
