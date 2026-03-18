@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, Text } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator } from 'react-native';
 import { Provider } from 'react-redux';
 import { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -11,10 +11,14 @@ import { backgroundLocationService, getPerformanceMonitorService, getMemoryManag
 import { getDatabaseService } from './src/database/services';
 import { EXPLORATION_RENDER_SOURCE, EXPLORATION_TILE_ZOOM } from './src/config';
 import { tilesForCircle } from './src/utils/tiles';
+import { cartographerTheme } from './src/components/cartographerTheme';
+import { appExperienceService } from './src/services/appExperienceService';
 
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [initializationError, setInitializationError] = useState<string | null>(null);
+  const [initializationStep, setInitializationStep] = useState('Preparing your map');
+  const [snapshotHint, setSnapshotHint] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -24,12 +28,22 @@ export default function App() {
       if (!isMounted) return;
 
       try {
+        const bootstrapSnapshot = await appExperienceService.loadBootstrapSnapshot();
+        if (bootstrapSnapshot?.progress && isMounted) {
+          setSnapshotHint(
+            `${bootstrapSnapshot.progress.percentageExplored.toFixed(1)}% explored · ${bootstrapSnapshot.progress.currentStreak} day streak`
+          );
+        }
+
+        setInitializationStep('Checking environment');
         // Validate configuration on app startup
         validateAppConfiguration();
 
+        setInitializationStep('Linking core services');
         // Initialize cross-service dependencies
         initializeServices();
 
+        setInitializationStep('Preparing local map data');
         // Initialize database and default data on first launch
         const result: InitializationResult = await initializeDatabaseOnFirstLaunch();
 
@@ -43,9 +57,11 @@ export default function App() {
           console.log('First launch setup completed successfully');
         }
 
+        setInitializationStep('Warming exploration cache');
         // Initialize the spatial cache with data from the database
         await spatialCacheService.initialize();
 
+        setInitializationStep('Reconciling explored tiles');
         // Backfill tile-based exploration coverage from existing explored areas (one-time best effort).
         // This enables tile-based rendering/sync even if the app previously stored only explored_areas.
         try {
@@ -78,12 +94,13 @@ export default function App() {
           autoProcessOnForeground: true,
           maxQueueSize: 500,
           processingInterval: 60000, // 1 minute
-          minAccuracy: 200, // 200 meters
+          minAccuracy: 100, // Match foreground acceptance rules
           minDistance: 50, // 50 meters
         });
 
         console.log('Background location service configured');
 
+        setInitializationStep('Tuning device performance');
         // Initialize performance monitoring services
         const performanceMonitorService = getPerformanceMonitorService();
         const memoryManagementService = getMemoryManagementService();
@@ -96,6 +113,7 @@ export default function App() {
 
         console.log('Performance monitoring services initialized');
 
+        setInitializationStep('Calibrating live exploration');
         // Start fog-location integration (location -> exploration -> fog)
         await fogLocationIntegrationService.start();
         console.log('Fog-location integration started');
@@ -130,8 +148,15 @@ export default function App() {
   if (isInitializing) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Text style={styles.loadingText}>Initializing Cartographer...</Text>
-        <StatusBar style="auto" />
+        <View style={styles.loadingCard}>
+          <Text style={styles.loadingEyebrow}>Cartographer</Text>
+          <ActivityIndicator size="large" color={cartographerTheme.colors.accent} />
+          <Text style={styles.loadingText}>{initializationStep}</Text>
+          <Text style={styles.loadingSubtext}>
+            {snapshotHint || 'Unfolding your fog-of-war world.'}
+          </Text>
+        </View>
+        <StatusBar style="light" />
       </View>
     );
   }
@@ -140,9 +165,12 @@ export default function App() {
   if (initializationError) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Text style={styles.errorText}>Failed to initialize app</Text>
-        <Text style={styles.errorDetails}>{initializationError}</Text>
-        <StatusBar style="auto" />
+        <View style={styles.loadingCard}>
+          <Text style={styles.loadingEyebrow}>Cartographer</Text>
+          <Text style={styles.errorText}>Initialization blocked</Text>
+          <Text style={styles.errorDetails}>{initializationError}</Text>
+        </View>
+        <StatusBar style="light" />
       </View>
     );
   }
@@ -153,7 +181,7 @@ export default function App() {
         <Provider store={store}>
           <View style={styles.container}>
             <TabNavigation />
-            <StatusBar style="auto" />
+            <StatusBar style="light" />
           </View>
         </Provider>
       </SafeAreaProvider>
@@ -164,28 +192,56 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: cartographerTheme.colors.background,
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: cartographerTheme.colors.background,
+  },
+  loadingCard: {
+    width: '86%',
+    maxWidth: 360,
+    backgroundColor: cartographerTheme.colors.surface,
+    borderRadius: cartographerTheme.radius.lg,
+    borderWidth: 1,
+    borderColor: cartographerTheme.colors.border,
+    padding: cartographerTheme.spacing.xl,
+    alignItems: 'center',
+  },
+  loadingEyebrow: {
+    color: cartographerTheme.colors.accentWarm,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginBottom: cartographerTheme.spacing.md,
   },
   loadingText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
+    fontSize: 24,
+    fontWeight: '700',
+    color: cartographerTheme.colors.textPrimary,
+    marginTop: cartographerTheme.spacing.lg,
+    textAlign: 'center',
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: cartographerTheme.colors.textSecondary,
+    textAlign: 'center',
+    marginTop: cartographerTheme.spacing.sm,
   },
   errorText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#d32f2f',
-    marginBottom: 10,
+    fontSize: 24,
+    fontWeight: '700',
+    color: cartographerTheme.colors.accentDanger,
+    marginBottom: cartographerTheme.spacing.sm,
     textAlign: 'center',
   },
   errorDetails: {
     fontSize: 14,
-    color: '#666',
+    color: cartographerTheme.colors.textSecondary,
+    lineHeight: 20,
     textAlign: 'center',
     paddingHorizontal: 20,
   },

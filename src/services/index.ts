@@ -1,6 +1,7 @@
 // Services barrel export
 export { LocationService, locationService, getLocationService } from './locationService';
 export { ExplorationService, explorationService } from './explorationService';
+export type { ExplorationResult, LocationProcessingResult } from './explorationService';
 export { 
   BACKGROUND_LOCATION_TASK, 
   processBackgroundLocations,
@@ -14,6 +15,7 @@ export { FogLocationIntegrationService, fogLocationIntegrationService } from './
 export { FogDissipationService, fogDissipationService } from './fogDissipationService';
 export { StatisticsService, getStatisticsService } from './statisticsService';
 export { AchievementsService, getAchievementsService } from './achievementsService';
+export { appExperienceService } from './appExperienceService';
 export { BackupService, getBackupService } from './backupService';
 export { OfflineService, getOfflineService } from './offlineService';
 export { MapboxOfflineService, getMapboxOfflineService } from './mapboxOfflineService';

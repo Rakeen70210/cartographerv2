@@ -49,12 +49,14 @@ export const refreshStats = createAsyncThunk(
       const statisticsService = getStatisticsService();
       await statisticsService.updateCalculatedStats();
       
-      const [stats, progress] = await Promise.all([
+      const [stats, progress, achievements, history] = await Promise.all([
         statisticsService.getDetailedStats(),
         statisticsService.getExplorationProgress(),
+        statisticsService.getAchievements(),
+        statisticsService.getExplorationHistory(30),
       ]);
       
-      return { stats, progress };
+      return { stats, progress, achievements, history };
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to refresh stats');
     }
@@ -129,6 +131,8 @@ const profileSlice = createSlice({
         state.isLoading = false;
         state.stats = action.payload.stats;
         state.progress = action.payload.progress;
+        state.achievements = action.payload.achievements;
+        state.explorationHistory = action.payload.history;
         state.lastUpdated = Date.now();
         state.error = null;
       })

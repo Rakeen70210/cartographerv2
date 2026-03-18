@@ -1,6 +1,7 @@
 // Components barrel export
 export { default as MapContainer } from './MapContainer';
 export { default as MapScreen } from './MapScreen';
+export { default as ProgressScreen } from './ProgressScreen';
 export { default as ProfileScreen } from './ProfileScreen';
 export { default as TabNavigation } from './TabNavigation';
 export { SkiaFogOverlay } from './SkiaFogOverlay';

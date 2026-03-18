@@ -118,17 +118,15 @@ export const OfflineManager: React.FC<OfflineManagerProps> = ({ visible, onClose
 
     try {
       setLoading(true);
-      
-      // For demo purposes, create a region around San Francisco
-      // In a real app, you'd let users select the area on the map
-      const bounds: [number, number, number, number] = [-122.5, 37.7, -122.3, 37.8];
-      
-      await mapboxOfflineService.createOfflineRegion(
-        newRegionName.trim(),
-        bounds,
-        0,
-        16
+
+      const regionId = await mapboxOfflineService.createOfflineRegionForExploredAreas(
+        newRegionName.trim()
       );
+
+      if (!regionId) {
+        Alert.alert('No Data', 'Explore somewhere first, then create an offline map from that territory.');
+        return;
+      }
       
       setShowCreateRegion(false);
       setNewRegionName('');
@@ -287,7 +285,7 @@ export const OfflineManager: React.FC<OfflineManagerProps> = ({ visible, onClose
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Offline Manager</Text>
+          <Text style={styles.title}>Offline Maps</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Text style={styles.closeButtonText}>Close</Text>
           </TouchableOpacity>
@@ -477,8 +475,8 @@ export const OfflineManager: React.FC<OfflineManagerProps> = ({ visible, onClose
               />
               
               <Text style={styles.modalNote}>
-                This will create an offline region for San Francisco (demo area).
-                In a full implementation, you would select the area on the map.
+                This creates an offline download from the territory you have already revealed.
+                Name it so you can recognize it later.
               </Text>
               
               <View style={styles.modalActions}>

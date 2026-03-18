@@ -44,6 +44,11 @@ export interface SpatialQuery {
   radius: number; // in kilometers
 }
 
+export interface PersistExplorationRecordInput {
+  area: Omit<ExploredArea, 'id' | 'created_at'>;
+  tiles?: Omit<VisitedTile, 'created_at'>[];
+}
+
 export class DatabaseService {
   private _db: SQLite.SQLiteDatabase | null = null;
 
@@ -97,6 +102,48 @@ export class DatabaseService {
     } catch (error) {
       console.error('Failed to create explored area:', error);
       throw new Error(`Failed to create explored area: ${error}`);
+    }
+  }
+
+  async persistExplorationRecord(input: PersistExplorationRecordInput): Promise<number> {
+    try {
+      let exploredAreaId = 0;
+
+      await this.db.withTransactionAsync(async () => {
+        const result = await this.db.runAsync(
+          `INSERT INTO explored_areas (latitude, longitude, radius, explored_at, accuracy)
+           VALUES (?, ?, ?, ?, ?)`,
+          [
+            input.area.latitude,
+            input.area.longitude,
+            input.area.radius,
+            input.area.explored_at,
+            input.area.accuracy || null,
+          ]
+        );
+
+        exploredAreaId = result.lastInsertRowId;
+
+        if (input.tiles && input.tiles.length > 0) {
+          for (const tile of input.tiles) {
+            await this.db.runAsync(
+              `INSERT INTO visited_tiles (z, x, y, explored_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(z, x, y) DO UPDATE SET explored_at =
+                 CASE
+                   WHEN excluded.explored_at < visited_tiles.explored_at THEN excluded.explored_at
+                   ELSE visited_tiles.explored_at
+                 END`,
+              [tile.z, tile.x, tile.y, tile.explored_at]
+            );
+          }
+        }
+      });
+
+      return exploredAreaId;
+    } catch (error) {
+      console.error('Failed to persist exploration record:', error);
+      throw new Error(`Failed to persist exploration record: ${error}`);
     }
   }
 

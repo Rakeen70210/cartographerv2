@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -8,58 +8,53 @@ import {
 } from 'react-native';
 import MapContainer from './MapContainer';
 import { MAPBOX_CONFIG } from '../config/mapbox';
-import { fogLocationIntegrationService } from '../services';
+import { explorationService, ExplorationResult } from '../services/explorationService';
+import { fogLocationIntegrationService } from '../services/fogLocationIntegrationService';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { loadMapStyle } from '../store/persistence';
 import {
-  setUserLocation,
   setMapStyle,
   resetViewport,
 } from '../store/slices/mapSlice';
+import { fetchProfileStats } from '../store/slices/profileSlice';
 import { selectMapStatus, selectMapAndLocation } from '../store/selectors';
+import { cartographerTheme } from './cartographerTheme';
+import { appExperienceService } from '../services/appExperienceService';
 
-interface MapScreenProps {
-  // Props can be expanded for additional functionality
-}
-
-const MapScreen: React.FC<MapScreenProps> = () => {
+const MapScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const mapStatus = useAppSelector(selectMapStatus);
-  const { viewport, isTracking, isMapReady } = useAppSelector(selectMapAndLocation);
+  const { isTracking, isMapReady, hasPermission } = useAppSelector(selectMapAndLocation);
+  const { stats, progress, lastUpdated } = useAppSelector((state) => state.profile);
   const integrationStarted = useRef(false);
+  const [discoveryToast, setDiscoveryToast] = useState<string | null>(null);
 
-  // Initialize fog-location integration
   useEffect(() => {
     let isMounted = true;
     let retryTimeout: NodeJS.Timeout | null = null;
 
     const initializeIntegration = async () => {
-      if (integrationStarted.current || !isMounted) return;
+      if (integrationStarted.current || !isMounted) {
+        return;
+      }
 
-      // Import database service to check if ready
       const { getDatabaseService } = await import('../database/services');
       const dbService = getDatabaseService();
 
-      // Check if database is ready, if not, wait and retry
       if (!dbService.isReady()) {
-        console.log('Database not ready yet, waiting to start fog-location integration...');
         retryTimeout = setTimeout(() => {
           if (isMounted) {
             initializeIntegration();
           }
-        }, 500); // Retry after 500ms
+        }, 500);
         return;
       }
 
       try {
-        console.log('Initializing fog-location integration...');
         const success = await fogLocationIntegrationService.start();
 
         if (success && isMounted) {
           integrationStarted.current = true;
-          console.log('Fog-location integration started successfully');
-        } else if (isMounted) {
-          console.warn('Failed to start fog-location integration');
         }
       } catch (error) {
         if (isMounted) {
@@ -70,7 +65,6 @@ const MapScreen: React.FC<MapScreenProps> = () => {
 
     initializeIntegration();
 
-    // Cleanup on unmount
     return () => {
       isMounted = false;
       if (retryTimeout) {
@@ -81,7 +75,7 @@ const MapScreen: React.FC<MapScreenProps> = () => {
         integrationStarted.current = false;
       }
     };
-  }, []); // Empty dependency array is correct here
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -95,7 +89,7 @@ const MapScreen: React.FC<MapScreenProps> = () => {
       dispatch(setMapStyle(savedMapStyle));
     };
 
-    restoreMapStyle().catch(error => {
+    restoreMapStyle().catch((error) => {
       console.error('Failed to restore map style:', error);
     });
 
@@ -104,25 +98,73 @@ const MapScreen: React.FC<MapScreenProps> = () => {
     };
   }, [dispatch]);
 
-  const handleLocationUpdate = (location: [number, number]) => {
-    // Update Redux state with new location
-    dispatch(setUserLocation(location));
-    console.log('Location updated:', location);
-  };
+  useEffect(() => {
+    if (!lastUpdated) {
+      dispatch(fetchProfileStats());
+    }
+  }, [dispatch, lastUpdated]);
+
+  useEffect(() => {
+    if (!progress && !stats) {
+      return;
+    }
+
+    appExperienceService.saveBootstrapSnapshot({
+      activeTab: 'explore',
+      updatedAt: Date.now(),
+      progress: {
+        percentageExplored: progress?.percentage ?? 0,
+        currentStreak: stats?.current_streak ?? 0,
+        areasExploredToday: stats?.areasExploredToday ?? 0,
+      },
+    }).catch(() => {});
+  }, [progress, stats]);
+
+  useEffect(() => {
+    let timeout: NodeJS.Timeout | null = null;
+
+    const handleExploration = (result: ExplorationResult) => {
+      if (!result.isNewArea || !result.exploredArea) {
+        return;
+      }
+
+      setDiscoveryToast(`New ground revealed · +${result.discoveredTileCount ?? 0} tiles`);
+      dispatch(fetchProfileStats());
+
+      timeout = setTimeout(() => {
+        setDiscoveryToast(null);
+      }, 2800);
+    };
+
+    explorationService.addExplorationListener(handleExploration);
+
+    return () => {
+      explorationService.removeExplorationListener(handleExploration);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
+  }, [dispatch]);
 
   const handleResetView = () => {
     dispatch(resetViewport());
   };
 
-  // Show error state if map failed to load
+  const nextTargetText = hasPermission
+    ? progress?.percentage
+      ? `Push past ${Math.max(1, Math.ceil(progress.percentage / 5) * 5)}% next.`
+      : 'Head toward the nearest fog edge to start your map.'
+    : 'Enable location access to start revealing the map.';
+
   if (mapStatus.hasError) {
     return (
       <View style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Map Error</Text>
-          <Text style={styles.errorMessage}>{mapStatus.error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={handleResetView}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+        <View style={styles.stateCard}>
+          <Text style={styles.stateEyebrow}>Explore</Text>
+          <Text style={styles.stateTitle}>Map unavailable</Text>
+          <Text style={styles.stateBody}>{mapStatus.error}</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={handleResetView}>
+            <Text style={styles.primaryButtonText}>Try again</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -137,26 +179,59 @@ const MapScreen: React.FC<MapScreenProps> = () => {
           initialZoom={MAPBOX_CONFIG.DEFAULT_ZOOM}
         />
 
-        {/* Show loading overlay while map is initializing */}
         {!isMapReady && (
           <View style={styles.loadingOverlay}>
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#4A90E2" />
-              <Text style={styles.loadingText}>Loading Map...</Text>
-              <Text style={styles.loadingSubtext}>Initializing your exploration experience</Text>
+            <View style={styles.stateCard}>
+              <Text style={styles.stateEyebrow}>Preparing your map</Text>
+              <ActivityIndicator size="large" color={cartographerTheme.colors.accent} />
+              <Text style={styles.stateTitle}>Calibrating exploration</Text>
+              <Text style={styles.stateBody}>
+                Loading your fog, frontier, and last known progress.
+              </Text>
             </View>
           </View>
         )}
 
-        {/* Status Indicators */}
-        <View style={styles.statusContainer}>
-          {isTracking && (
-            <View style={styles.trackingIndicator}>
-              <View style={styles.trackingDot} />
-              <Text style={styles.trackingText}>Tracking</Text>
-            </View>
-          )}
+        <View style={styles.topHud}>
+          <View style={styles.hudChip}>
+            <View style={[styles.statusDot, { backgroundColor: isTracking ? cartographerTheme.colors.accentSuccess : cartographerTheme.colors.accentDanger }]} />
+            <Text style={styles.hudChipText}>{isTracking ? 'Tracking live' : 'Tracking paused'}</Text>
+          </View>
+          <View style={styles.hudChip}>
+            <Text style={styles.hudChipText}>{hasPermission ? 'Location ready' : 'Location needed'}</Text>
+          </View>
         </View>
+
+        <View style={styles.bottomHud}>
+          <View style={styles.progressHudCard}>
+            <Text style={styles.progressLabel}>Explore</Text>
+            <View style={styles.progressHudRow}>
+              <View style={styles.progressMetric}>
+                <Text style={styles.progressValue}>{progress?.percentage?.toFixed(1) ?? '0.0'}%</Text>
+                <Text style={styles.progressMetricLabel}>Revealed</Text>
+              </View>
+              <View style={styles.progressMetric}>
+                <Text style={styles.progressValue}>{stats?.current_streak ?? 0}</Text>
+                <Text style={styles.progressMetricLabel}>Streak</Text>
+              </View>
+              <View style={styles.progressMetric}>
+                <Text style={styles.progressValue}>{stats?.areasExploredToday ?? 0}</Text>
+                <Text style={styles.progressMetricLabel}>Today</Text>
+              </View>
+            </View>
+            <Text style={styles.progressHint}>{nextTargetText}</Text>
+          </View>
+
+          <TouchableOpacity style={styles.fab} onPress={handleResetView}>
+            <Text style={styles.fabText}>Recenter</Text>
+          </TouchableOpacity>
+        </View>
+
+        {discoveryToast ? (
+          <View style={styles.discoveryToast}>
+            <Text style={styles.discoveryToastText}>{discoveryToast}</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -165,96 +240,168 @@ const MapScreen: React.FC<MapScreenProps> = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000', // Dark background for loading
+    backgroundColor: cartographerTheme.colors.background,
   },
   mapWrapper: {
     flex: 1,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#1a1a1a',
-  },
   loadingOverlay: {
     position: 'absolute',
     top: 0,
-    left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#1a1a1a',
-    zIndex: 1000,
-  },
-  loadingText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  loadingSubtext: {
-    fontSize: 14,
-    color: '#888888',
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
+    left: 0,
+    backgroundColor: cartographerTheme.colors.overlay,
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    padding: cartographerTheme.spacing.lg,
   },
-  errorText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ff6b6b',
-    marginBottom: 10,
+  stateCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: cartographerTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: cartographerTheme.colors.border,
+    borderRadius: cartographerTheme.radius.lg,
+    padding: cartographerTheme.spacing.xl,
+    alignItems: 'center',
   },
-  errorMessage: {
-    fontSize: 16,
-    color: '#ffffff',
+  stateEyebrow: {
+    color: cartographerTheme.colors.accent,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.4,
+    marginBottom: cartographerTheme.spacing.md,
+  },
+  stateTitle: {
+    color: cartographerTheme.colors.textPrimary,
+    fontSize: 26,
+    fontWeight: '700',
+    marginTop: cartographerTheme.spacing.md,
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 20,
   },
-  retryButton: {
-    backgroundColor: '#4A90E2',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+  stateBody: {
+    color: cartographerTheme.colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginTop: cartographerTheme.spacing.sm,
   },
-  retryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+  primaryButton: {
+    marginTop: cartographerTheme.spacing.lg,
+    backgroundColor: cartographerTheme.colors.accent,
+    borderRadius: cartographerTheme.radius.pill,
+    paddingHorizontal: cartographerTheme.spacing.lg,
+    paddingVertical: cartographerTheme.spacing.sm,
   },
-
-  statusContainer: {
+  primaryButtonText: {
+    color: cartographerTheme.colors.background,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  topHud: {
     position: 'absolute',
-    top: 60,
-    left: 16,
-    zIndex: 1000,
+    top: cartographerTheme.spacing.xl,
+    left: cartographerTheme.spacing.lg,
+    right: cartographerTheme.spacing.lg,
+    flexDirection: 'row',
+    gap: cartographerTheme.spacing.sm,
   },
-  trackingIndicator: {
+  hudChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    backgroundColor: cartographerTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: cartographerTheme.colors.border,
+    borderRadius: cartographerTheme.radius.pill,
+    paddingHorizontal: cartographerTheme.spacing.md,
+    paddingVertical: cartographerTheme.spacing.sm,
   },
-  trackingDot: {
+  hudChipText: {
+    color: cartographerTheme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  statusDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4CAF50',
-    marginRight: 8,
+    borderRadius: 999,
+    marginRight: cartographerTheme.spacing.sm,
   },
-  trackingText: {
-    color: '#ffffff',
+  bottomHud: {
+    position: 'absolute',
+    left: cartographerTheme.spacing.lg,
+    right: cartographerTheme.spacing.lg,
+    bottom: cartographerTheme.spacing.xl,
+    gap: cartographerTheme.spacing.md,
+  },
+  progressHudCard: {
+    backgroundColor: cartographerTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: cartographerTheme.colors.border,
+    borderRadius: cartographerTheme.radius.lg,
+    padding: cartographerTheme.spacing.lg,
+  },
+  progressLabel: {
+    color: cartographerTheme.colors.accentWarm,
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.3,
+    marginBottom: cartographerTheme.spacing.sm,
+  },
+  progressHudRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: cartographerTheme.spacing.sm,
+  },
+  progressMetric: {
+    flex: 1,
+  },
+  progressValue: {
+    color: cartographerTheme.colors.textPrimary,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  progressMetricLabel: {
+    color: cartographerTheme.colors.textSecondary,
+    fontSize: 12,
+    marginTop: cartographerTheme.spacing.xs,
+  },
+  progressHint: {
+    color: cartographerTheme.colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: cartographerTheme.spacing.md,
+  },
+  fab: {
+    alignSelf: 'flex-end',
+    backgroundColor: cartographerTheme.colors.accent,
+    borderRadius: cartographerTheme.radius.pill,
+    paddingHorizontal: cartographerTheme.spacing.lg,
+    paddingVertical: cartographerTheme.spacing.md,
+  },
+  fabText: {
+    color: cartographerTheme.colors.background,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  discoveryToast: {
+    position: 'absolute',
+    alignSelf: 'center',
+    bottom: 188,
+    backgroundColor: 'rgba(132, 241, 186, 0.2)',
+    borderColor: 'rgba(132, 241, 186, 0.35)',
+    borderWidth: 1,
+    borderRadius: cartographerTheme.radius.pill,
+    paddingHorizontal: cartographerTheme.spacing.lg,
+    paddingVertical: cartographerTheme.spacing.sm,
+  },
+  discoveryToastText: {
+    color: cartographerTheme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
 

@@ -317,14 +317,11 @@ export class OfflineService {
   private async processOfflineQueueItem(item: OfflineQueueItem): Promise<void> {
     switch (item.type) {
       case 'exploration':
-        await this.databaseService.createExploredArea(item.data);
-        try {
-          const tiles = tilesForCircle(item.data.latitude, item.data.longitude, item.data.radius, EXPLORATION_TILE_ZOOM)
-            .map(tile => ({ ...tile, explored_at: item.data.explored_at }));
-          await this.databaseService.upsertVisitedTiles(tiles);
-        } catch (tileError) {
-          console.warn('Failed to record visited tiles for offline exploration item:', tileError);
-        }
+        await this.databaseService.persistExplorationRecord({
+          area: item.data,
+          tiles: tilesForCircle(item.data.latitude, item.data.longitude, item.data.radius, EXPLORATION_TILE_ZOOM)
+            .map(tile => ({ ...tile, explored_at: item.data.explored_at })),
+        });
         break;
       case 'achievement':
         await this.databaseService.createAchievement(item.data);

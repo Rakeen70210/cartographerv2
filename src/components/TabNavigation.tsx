@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,25 +7,51 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapScreen from './MapScreen';
+import ProgressScreen from './ProgressScreen';
 import ProfileScreen from './ProfileScreen';
+import { cartographerTheme } from './cartographerTheme';
+import { appExperienceService } from '../services/appExperienceService';
 
-type TabType = 'map' | 'profile';
+type TabType = 'explore' | 'progress' | 'me';
 
 interface TabButtonProps {
   title: string;
-  icon: string;
   isActive: boolean;
   onPress: () => void;
+  icon: React.ReactNode;
 }
 
-const TabButton: React.FC<TabButtonProps> = ({ title, icon, isActive, onPress }) => (
+const ExploreIcon = ({ active }: { active: boolean }) => (
+  <View style={styles.iconFrame}>
+    <View style={[styles.exploreIconDiamond, active && styles.iconActiveFill]} />
+  </View>
+);
+
+const ProgressIcon = ({ active }: { active: boolean }) => (
+  <View style={styles.iconFrame}>
+    <View style={styles.progressIconRow}>
+      <View style={[styles.progressBar, { height: 8 }, active && styles.iconActiveFill]} />
+      <View style={[styles.progressBar, { height: 12 }, active && styles.iconActiveFill]} />
+      <View style={[styles.progressBar, { height: 16 }, active && styles.iconActiveFill]} />
+    </View>
+  </View>
+);
+
+const MeIcon = ({ active }: { active: boolean }) => (
+  <View style={styles.iconFrame}>
+    <View style={[styles.meIconHead, active && styles.iconActiveFill]} />
+    <View style={[styles.meIconBody, active && styles.iconActiveFill]} />
+  </View>
+);
+
+const TabButton: React.FC<TabButtonProps> = ({ title, isActive, onPress, icon }) => (
   <TouchableOpacity
     style={[styles.tabButton, isActive && styles.tabButtonActive]}
     onPress={onPress}
+    accessibilityRole="button"
+    accessibilityState={{ selected: isActive }}
   >
-    <Text style={[styles.tabIcon, isActive && styles.tabIconActive]}>
-      {icon}
-    </Text>
+    <View style={styles.iconSlot}>{icon}</View>
     <Text style={[styles.tabTitle, isActive && styles.tabTitleActive]}>
       {title}
     </Text>
@@ -33,13 +59,22 @@ const TabButton: React.FC<TabButtonProps> = ({ title, icon, isActive, onPress })
 );
 
 const TabNavigation: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('map');
+  const [activeTab, setActiveTab] = useState<TabType>('explore');
+
+  useEffect(() => {
+    appExperienceService.saveBootstrapSnapshot({
+      activeTab,
+      updatedAt: Date.now(),
+    }).catch(() => {});
+  }, [activeTab]);
 
   const renderScreen = () => {
     switch (activeTab) {
-      case 'map':
+      case 'explore':
         return <MapScreen />;
-      case 'profile':
+      case 'progress':
+        return <ProgressScreen />;
+      case 'me':
         return <ProfileScreen />;
       default:
         return <MapScreen />;
@@ -48,24 +83,28 @@ const TabNavigation: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Screen Content */}
       <View style={styles.screenContainer}>
         {renderScreen()}
       </View>
 
-      {/* Tab Bar */}
       <View style={styles.tabBar}>
         <TabButton
-          title="Map"
-          icon="🗺️"
-          isActive={activeTab === 'map'}
-          onPress={() => setActiveTab('map')}
+          title="Explore"
+          icon={<ExploreIcon active={activeTab === 'explore'} />}
+          isActive={activeTab === 'explore'}
+          onPress={() => setActiveTab('explore')}
         />
         <TabButton
-          title="Profile"
-          icon="👤"
-          isActive={activeTab === 'profile'}
-          onPress={() => setActiveTab('profile')}
+          title="Progress"
+          icon={<ProgressIcon active={activeTab === 'progress'} />}
+          isActive={activeTab === 'progress'}
+          onPress={() => setActiveTab('progress')}
+        />
+        <TabButton
+          title="Me"
+          icon={<MeIcon active={activeTab === 'me'} />}
+          isActive={activeTab === 'me'}
+          onPress={() => setActiveTab('me')}
         />
       </View>
     </SafeAreaView>
@@ -75,44 +114,84 @@ const TabNavigation: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: cartographerTheme.colors.background,
   },
   screenContainer: {
     flex: 1,
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: cartographerTheme.colors.backgroundElevated,
     borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
-    paddingBottom: 0,
-    paddingHorizontal: 0,
+    borderTopColor: cartographerTheme.colors.border,
+    paddingHorizontal: cartographerTheme.spacing.sm,
+    paddingTop: cartographerTheme.spacing.sm,
+    paddingBottom: cartographerTheme.spacing.sm,
+    gap: cartographerTheme.spacing.sm,
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  tabButtonActive: {
+    justifyContent: 'center',
+    paddingVertical: cartographerTheme.spacing.sm,
+    borderRadius: cartographerTheme.radius.md,
     backgroundColor: 'transparent',
   },
-  tabIcon: {
-    fontSize: 24,
-    marginBottom: 4,
-    opacity: 0.6,
+  tabButtonActive: {
+    backgroundColor: cartographerTheme.colors.surface,
   },
-  tabIconActive: {
-    opacity: 1,
+  iconSlot: {
+    marginBottom: cartographerTheme.spacing.xs,
   },
   tabTitle: {
+    color: cartographerTheme.colors.textSecondary,
     fontSize: 12,
-    color: '#8E8E93',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   tabTitleActive: {
-    color: '#007AFF',
-    fontWeight: '600',
+    color: cartographerTheme.colors.textPrimary,
+  },
+  iconFrame: {
+    width: 24,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconActiveFill: {
+    backgroundColor: cartographerTheme.colors.accent,
+  },
+  exploreIconDiamond: {
+    width: 12,
+    height: 12,
+    borderWidth: 2,
+    borderColor: cartographerTheme.colors.accent,
+    transform: [{ rotate: '45deg' }],
+  },
+  progressIconRow: {
+    width: 20,
+    height: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  progressBar: {
+    width: 4,
+    borderRadius: cartographerTheme.radius.pill,
+    backgroundColor: cartographerTheme.colors.accentMuted,
+  },
+  meIconHead: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: cartographerTheme.colors.accentMuted,
+    marginBottom: 2,
+  },
+  meIconBody: {
+    width: 14,
+    height: 7,
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
+    backgroundColor: cartographerTheme.colors.accentMuted,
   },
 });
 

@@ -2,24 +2,23 @@ import { LocationUpdate } from '../types';
 import { getDatabaseService, ExploredArea } from '../database/services';
 import { locationService } from './locationService';
 import { processBackgroundLocations } from './taskManager';
-import { calculateDistance, createLocationKey, calculateCircleOverlap, Circle, metersToMiles } from '../utils/spatial';
-import { getOfflineService } from './offlineService';
+import { calculateDistance, createLocationKey, metersToMiles } from '../utils/spatial';
 import { EXPLORATION_TILE_ZOOM } from '../config';
 import { tilesForCircle } from '../utils/tiles';
-
-export interface ExplorationConfig {
-  minExplorationRadius: number; // meters
-  maxExplorationRadius: number; // meters
-  minAccuracyThreshold: number; // meters
-  overlapThreshold: number; // percentage (0-1)
-  minDwellTime: number; // milliseconds
-}
+import {
+  DEFAULT_EXPLORATION_CONFIG,
+  evaluateExplorationCandidate,
+  ExplorationConfig,
+} from './explorationEngine';
 
 export interface ExplorationResult {
   isNewArea: boolean;
   exploredArea?: ExploredArea;
   overlappingAreas: ExploredArea[];
   explorationRadius: number;
+  source?: string;
+  rejectionReason?: string;
+  discoveredTileCount?: number;
 }
 
 export interface LocationProcessingResult {
@@ -28,25 +27,26 @@ export interface LocationProcessingResult {
   exploredArea?: ExploredArea;
   source?: string;
   warnings?: string[];
+  explorationRadius?: number;
+  discoveredTileCount?: number;
+}
+
+interface PendingLocationRecord {
+  location: LocationUpdate;
+  firstSeenAt: number;
+  lastSeenAt: number;
 }
 
 export class ExplorationService {
   private static instance: ExplorationService;
   private databaseService = getDatabaseService();
-  private offlineService = getOfflineService();
   private config: ExplorationConfig;
-  private pendingLocations: Map<string, { location: LocationUpdate; timestamp: number }> = new Map();
+  private pendingLocations: Map<string, PendingLocationRecord> = new Map();
   private isProcessing: boolean = false;
   private lastValidLocation: LocationUpdate | null = null;
 
   private constructor() {
-    this.config = {
-      minExplorationRadius: 50, // 50 meters minimum
-      maxExplorationRadius: 200, // 200 meters maximum
-      minAccuracyThreshold: 100, // Only process locations with accuracy better than 100m
-      overlapThreshold: 0.7, // 70% overlap threshold for deduplication
-      minDwellTime: 30000, // 30 seconds minimum dwell time
-    };
+    this.config = { ...DEFAULT_EXPLORATION_CONFIG };
 
     // Set up location listener
     locationService.addLocationListener(this.handleLocationUpdate.bind(this));
@@ -83,15 +83,16 @@ export class ExplorationService {
       // Check if we already have a pending location for this area
       const existing = this.pendingLocations.get(locationKey);
       if (existing) {
-        // Update timestamp but keep original location
-        existing.timestamp = Date.now();
+        existing.location = location;
+        existing.lastSeenAt = Date.now();
         return;
       }
 
       // Add to pending locations
       this.pendingLocations.set(locationKey, {
         location,
-        timestamp: Date.now()
+        firstSeenAt: Date.now(),
+        lastSeenAt: Date.now(),
       });
 
       // Process location after dwell time
@@ -118,20 +119,16 @@ export class ExplorationService {
         return; // Location was removed or processed
       }
 
-      // Check if location is still recent enough
-      const timeSinceUpdate = Date.now() - pendingLocation.timestamp;
-      if (timeSinceUpdate < this.config.minDwellTime) {
-        return; // Not enough dwell time yet
-      }
-
       this.isProcessing = true;
-      
-      const result = await this.detectExploration(pendingLocation.location);
-      
-      if (result.isNewArea && result.exploredArea) {
-        console.log('New area explored:', result.exploredArea);
-        // Notify listeners about new exploration
-        this.notifyExplorationListeners(result);
+
+      const processResult = await this.processLocationUpdate(
+        pendingLocation.location,
+        'foreground',
+        { firstSeenAt: pendingLocation.firstSeenAt }
+      );
+
+      if (processResult.newAreaExplored && processResult.exploredArea) {
+        console.log('New area explored:', processResult.exploredArea);
       }
 
       // Remove processed location
@@ -149,42 +146,20 @@ export class ExplorationService {
    */
   public async detectExploration(location: LocationUpdate): Promise<ExplorationResult> {
     try {
-      // Calculate exploration radius based on accuracy
-      const explorationRadius = this.calculateExplorationRadius(location.accuracy);
-
-      // Find nearby explored areas
-      const nearbyAreas = await this.databaseService.findNearbyExploredAreas({
-        latitude: location.latitude,
-        longitude: location.longitude,
-        radius: explorationRadius / 1000 // Convert to kilometers
-      });
-
-      // Check for overlaps
-      const overlappingAreas = this.findOverlappingAreas(
+      const locationResult = await this.processLocationUpdate(
         location,
-        explorationRadius,
-        nearbyAreas
+        'manual',
+        { enforceDwell: false }
       );
-
-      // Determine if this is a new area
-      const isNewArea = !this.hasSignificantOverlap(
-        location,
-        explorationRadius,
-        overlappingAreas
-      );
-
-      let exploredArea: ExploredArea | undefined;
-
-      if (isNewArea) {
-        // Create new explored area
-        exploredArea = await this.createExploredArea(location, explorationRadius);
-      }
 
       return {
-        isNewArea,
-        exploredArea,
-        overlappingAreas,
-        explorationRadius
+        isNewArea: locationResult.newAreaExplored,
+        exploredArea: locationResult.exploredArea,
+        overlappingAreas: [],
+        explorationRadius: locationResult.explorationRadius ?? this.calculateExplorationRadius(location.accuracy),
+        source: locationResult.source,
+        rejectionReason: locationResult.rejectionReason,
+        discoveredTileCount: locationResult.discoveredTileCount,
       };
 
     } catch (error) {
@@ -203,61 +178,12 @@ export class ExplorationService {
   }
 
   /**
-   * Find areas that overlap with the current location
-   */
-  private findOverlappingAreas(
-    location: LocationUpdate,
-    radius: number,
-    nearbyAreas: ExploredArea[]
-  ): ExploredArea[] {
-    return nearbyAreas.filter(area => {
-      const distance = calculateDistance(
-        location.latitude,
-        location.longitude,
-        area.latitude,
-        area.longitude
-      );
-      
-      // Check if circles overlap
-      return distance < (radius + area.radius);
-    });
-  }
-
-  /**
-   * Check if there's significant overlap with existing areas
-   */
-  private hasSignificantOverlap(
-    location: LocationUpdate,
-    radius: number,
-    overlappingAreas: ExploredArea[]
-  ): boolean {
-    for (const area of overlappingAreas) {
-      const circle1: Circle = {
-        center: { latitude: location.latitude, longitude: location.longitude },
-        radius: radius
-      };
-      const circle2: Circle = {
-        center: { latitude: area.latitude, longitude: area.longitude },
-        radius: area.radius
-      };
-      
-      const overlapPercentage = calculateCircleOverlap(circle1, circle2);
-
-      if (overlapPercentage >= this.config.overlapThreshold) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /*
-*
    * Create a new explored area in the database
    */
   private async createExploredArea(
     location: LocationUpdate,
     radius: number
-  ): Promise<ExploredArea> {
+  ): Promise<{ exploredArea: ExploredArea; discoveredTileCount: number }> {
     try {
       const exploredArea: Omit<ExploredArea, 'id' | 'created_at'> = {
         latitude: location.latitude,
@@ -266,63 +192,27 @@ export class ExplorationService {
         explored_at: new Date(location.timestamp).toISOString(),
         accuracy: location.accuracy
       };
+      const tiles = tilesForCircle(location.latitude, location.longitude, radius, EXPLORATION_TILE_ZOOM)
+        .map(tile => ({ ...tile, explored_at: exploredArea.explored_at }));
+      const id = await this.databaseService.persistExplorationRecord({
+        area: exploredArea,
+        tiles,
+      });
 
-      // Check if we're online
-      if (this.offlineService.isOnline()) {
-        // Create directly in database
-        const id = await this.databaseService.createExploredArea(exploredArea);
+      this.refreshDerivedStats().catch((statsError) => {
+        console.warn('Failed to refresh derived stats after exploration:', statsError);
+      });
 
-        // Also record tile-based exploration coverage for fast set-union sync + rendering.
-        // This is best-effort; failures shouldn't block the core exploration record.
-        try {
-          const tiles = tilesForCircle(location.latitude, location.longitude, radius, EXPLORATION_TILE_ZOOM)
-            .map(tile => ({ ...tile, explored_at: exploredArea.explored_at }));
-          await this.databaseService.upsertVisitedTiles(tiles);
-        } catch (tileError) {
-          console.warn('Failed to record visited tiles for exploration:', tileError);
-        }
-        
-        return {
+      return {
+        exploredArea: {
           id,
-          ...exploredArea
-        };
-      } else {
-        // Add to offline queue for later processing
-        await this.offlineService.addToOfflineQueue({
-          type: 'exploration',
-          data: exploredArea
-        });
-        
-        // Return area with temporary ID for immediate UI feedback
-        return {
-          id: Date.now(), // Temporary ID
-          ...exploredArea
-        };
-      }
+          ...exploredArea,
+        },
+        discoveredTileCount: tiles.length,
+      };
     } catch (error) {
       console.error('Error creating explored area:', error);
-      
-      // If database operation fails, try adding to offline queue
-      if (this.offlineService.isOffline()) {
-        const exploredArea: Omit<ExploredArea, 'id' | 'created_at'> = {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          radius: radius,
-          explored_at: new Date(location.timestamp).toISOString(),
-          accuracy: location.accuracy
-        };
-        
-        await this.offlineService.addToOfflineQueue({
-          type: 'exploration',
-          data: exploredArea
-        });
-        
-        return {
-          id: Date.now(), // Temporary ID
-          ...exploredArea
-        };
-      }
-      
+
       throw new Error(`Failed to create explored area: ${error}`);
     }
   }
@@ -410,24 +300,17 @@ export class ExplorationService {
     }
   }
 
-  /**
-   * Process a location update (for testing compatibility)
-   */
-  public async processLocationUpdate(location: LocationUpdate): Promise<LocationProcessingResult> {
+  public async processLocationUpdate(
+    location: LocationUpdate,
+    source: 'manual' | 'foreground' | 'background' = 'manual',
+    options: { firstSeenAt?: number; enforceDwell?: boolean } = {}
+  ): Promise<LocationProcessingResult> {
     try {
       // Validate location data
       if (!this.isLocationValid(location)) {
         return {
           newAreaExplored: false,
           rejectionReason: 'invalid_data'
-        };
-      }
-
-      // Check accuracy threshold
-      if (location.accuracy > this.config.minAccuracyThreshold) {
-        return {
-          newAreaExplored: false,
-          rejectionReason: 'poor_accuracy'
         };
       }
 
@@ -439,17 +322,54 @@ export class ExplorationService {
         };
       }
 
-      // Process the location
-      const explorationResult = await this.detectExploration(location);
-      
+      const explorationRadius = this.calculateExplorationRadius(location.accuracy);
+      const nearbyAreas = await this.databaseService.findNearbyExploredAreas({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        radius: explorationRadius / 1000,
+      });
+      const shouldEnforceDwell = options.enforceDwell ?? source !== 'manual';
+      const effectiveFirstSeenAt = !shouldEnforceDwell
+        ? location.timestamp - this.config.minDwellTime
+        : (options.firstSeenAt ?? location.timestamp);
+      const decision = evaluateExplorationCandidate({
+        location,
+        nearbyAreas,
+        now: Date.now(),
+        firstSeenAt: effectiveFirstSeenAt,
+        config: this.config,
+      });
+
+      if (decision.status === 'pending' || decision.status === 'rejected') {
+        return {
+          newAreaExplored: false,
+          rejectionReason: decision.reason,
+          source,
+          explorationRadius: decision.explorationRadius,
+        };
+      }
+
+      const persisted = await this.createExploredArea(location, decision.explorationRadius);
+      const explorationResult: ExplorationResult = {
+        isNewArea: true,
+        exploredArea: persisted.exploredArea,
+        overlappingAreas: decision.overlappingAreas,
+        explorationRadius: decision.explorationRadius,
+        source,
+        discoveredTileCount: persisted.discoveredTileCount,
+      };
+
       if (explorationResult.isNewArea) {
         this.lastValidLocation = location;
+        this.notifyExplorationListeners(explorationResult);
       }
 
       return {
-        newAreaExplored: explorationResult.isNewArea,
+        newAreaExplored: true,
         exploredArea: explorationResult.exploredArea,
-        source: 'manual'
+        source,
+        explorationRadius: decision.explorationRadius,
+        discoveredTileCount: persisted.discoveredTileCount,
       };
     } catch (error) {
       console.error('Error processing location update:', error);
@@ -558,7 +478,9 @@ export class ExplorationService {
         
         // Process each background location
         for (const location of backgroundLocations) {
-          await this.handleLocationUpdate(location);
+          await this.processLocationUpdate(location, 'background', {
+            firstSeenAt: location.timestamp,
+          });
         }
         
         console.log('Background locations processed');
@@ -641,6 +563,12 @@ export class ExplorationService {
 
     // If distance is greater than what's possible at max speed, it's impossible
     return distance > (maxPossibleSpeed * timeDiff);
+  }
+
+  private async refreshDerivedStats(): Promise<void> {
+    const { getStatisticsService } = await import('./statisticsService');
+    const statisticsService = getStatisticsService();
+    await statisticsService.updateCalculatedStats();
   }
 }
 

@@ -1,8 +1,7 @@
 import { AppState, AppStateStatus } from 'react-native';
 import { locationService } from './locationService';
-import { getDatabaseService } from '../database/services';
 import { LocationUpdate } from '../types';
-import { spatialCacheService } from './spatialCacheService';
+import { explorationService } from './explorationService';
 
 export interface BackgroundLocationConfig {
   autoProcessOnForeground: boolean;
@@ -143,7 +142,6 @@ export class BackgroundLocationService {
         return { processed: 0, failed: 0, skipped: 0 };
       }
 
-      const databaseService = getDatabaseService();
       let processedCount = 0;
       let failedCount = 0;
       let skippedCount = 0;
@@ -161,32 +159,15 @@ export class BackgroundLocationService {
               continue;
             }
 
-            // Check if we should process this location
-            const shouldProcess = await this.shouldProcessLocation(location, databaseService);
-            if (!shouldProcess) {
+            const result = await explorationService.processLocationUpdate(location, 'background', {
+              firstSeenAt: location.timestamp,
+            });
+
+            if (result.newAreaExplored) {
+              processedCount++;
+            } else {
               skippedCount++;
-              continue;
             }
-
-            // Create explored area
-            const exploredAreaId = await databaseService.createExploredArea({
-              latitude: location.latitude,
-              longitude: location.longitude,
-              radius: Math.max(location.accuracy, this.config.minDistance),
-              explored_at: new Date(location.timestamp).toISOString(),
-              accuracy: location.accuracy,
-            });
-
-            spatialCacheService.add({
-              id: exploredAreaId,
-              latitude: location.latitude,
-              longitude: location.longitude,
-              radius: Math.max(location.accuracy, this.config.minDistance),
-              explored_at: new Date(location.timestamp).toISOString(),
-              accuracy: location.accuracy,
-            });
-
-            processedCount++;
             
           } catch (error) {
             console.error('Error processing background location:', error);
@@ -303,31 +284,6 @@ export class BackgroundLocationService {
       !isNaN(location.latitude) &&
       !isNaN(location.longitude)
     );
-  }
-
-  private async shouldProcessLocation(
-    location: LocationUpdate,
-    databaseService: any
-  ): Promise<boolean> {
-    try {
-      // Check for nearby recent locations
-      const nearbyAreas = await databaseService.findNearbyExploredAreas({
-        latitude: location.latitude,
-        longitude: location.longitude,
-        radius: this.config.minDistance / 1000, // Convert to km
-      });
-
-      // If we have a location within the minimum distance, skip
-      if (nearbyAreas.length > 0) {
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error checking if location should be processed:', error);
-      // Default to processing if we can't determine
-      return true;
-    }
   }
 
   /**
